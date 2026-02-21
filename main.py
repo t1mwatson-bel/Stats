@@ -14,7 +14,7 @@ for key, value in os.environ.items():
     if 'TOKEN' in key or 'CHANNEL' in key:
         print(f"   {key} = {value[:10]}...")
 
-TOKEN = os.getenv("TOKEN", "8596594907:AAHUQjk-ik3LGV7kI-4XhCn-fw1T-FHo6wU"))
+TOKEN = os.getenv("TOKEN", "8596594907:AAHUQjk-ik3LGV7kI-4XhCn-fw1T-FHo6wU")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1003179573402"))
 
 print(f"🔍 TOKEN получен: {'✅' if TOKEN else '❌ ПУСТО!' }")
