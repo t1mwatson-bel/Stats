@@ -23,9 +23,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ===== ПЕРЕМЕННЫЕ =====
-TOKEN = os.getenv("8596594907:AAHUQjk-ik3LGV7kI-4XhCn-fw1T-FHo6wU")
+TOKEN = os.getenv("TOKEN")  # Берет значение из переменной TOKEN в .env
 API_BASE = os.getenv("API_BASE", "https://1xlite-7636770.bar")
-CHAT_ID = os.getenv("-1003179573402")  # Добавьте переменную для chat_id
+CHAT_ID = os.getenv("CHAT_ID")  # Берет значение из переменной CHAT_ID в .env
 GAME_IDS = [697705521, 697704425]
 
 HEADERS = {
