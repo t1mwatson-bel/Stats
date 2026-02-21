@@ -8,18 +8,35 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ========== НАСТРОЙКИ ==========
-TOKEN = os.getenv("8596594907:AAHUQjk-ik3LGV7kI-4XhCn-fw1T-FHo6wU")
+# ========== ДЕБАГ Variables ==========
+print("🔍 DEBUG: Все переменные окружения:")
+for key, value in os.environ.items():
+    if 'TOKEN' in key or 'CHANNEL' in key:
+        print(f"   {key} = {value[:10]}...")
+
+TOKEN = os.getenv("TOKEN", "8596594907:AAHUQjk-ik3LGV7kI-4XhCn-fw1T-FHo6wU"))
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1003179573402"))
+
+print(f"🔍 TOKEN получен: {'✅' if TOKEN else '❌ ПУСТО!' }")
+print(f"🔍 TOKEN preview: {TOKEN[:20] if TOKEN else 'None'}...")
+print(f"🔍 CHANNEL_ID: {CHANNEL_ID}")
+
+if not TOKEN:
+    print("❌ ОСТАНОВКА: TOKEN не найден в Variables!")
+    print("   Railway → Settings → Variables → TOKEN = 8596594907:AAHUQjk-ik3LGV7kI-4XhCn-fw1T-FHo6")
+    exit(1)
+
+# ========== НАСТРОЙКИ ==========
 API_BASE = "https://1xlite-7636770.bar"
 GAME_IDS = [697705521, 697704425]
-
 SUIT_MAP = {1: '♥️', 2: '♠️', 3: '♣️', 4: '♦️'}
 RANK_MAP = {1: 'A', 11: 'J', 12: 'Q', 13: 'K', 14: 'A'}
-
 game_counter = 1248
 
+print("✅ Создаём Bot...")
 bot = Bot(token=TOKEN)
+print("✅ Bot создан!")
+
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     'Accept': 'application/json, text/plain, */*',
@@ -36,6 +53,7 @@ def get_game_data(game_id):
             verify=False
         )
         if response.status_code != 200:
+            print(f"❌ HTTP {response.status_code}")
             return None
         
         details = response.json()
@@ -54,43 +72,28 @@ def get_game_data(game_id):
                         player_cards = cards
                     else:
                         banker_cards = cards
-                except json.JSONDecodeError:
+                except:
                     continue
         
-        # Парсинг карт БЕЗ f-строк (исправленная версия)
         def parse_cards(cards_list):
             result = []
             for card in cards_list:
                 if isinstance(card, dict):
                     rank_num = card.get('R', 0)
                     suit_code = card.get('S', 0)
-                    
-                    # Ранг
-                    if rank_num in RANK_MAP:
-                        rank_str = RANK_MAP[rank_num]
-                    elif 2 <= rank_num <= 10:
-                        rank_str = str(rank_num)
-                    else:
-                        rank_str = '?'
-                    
-                    # Масть
-                    suit_str = SUIT_MAP.get(suit_code, '?')
-                    
-                    result.append(rank_str + suit_str)
+                    rank = RANK_MAP.get(rank_num, str(rank_num) if 2 <= rank_num <= 10 else '?')
+                    suit = SUIT_MAP.get(suit_code, '?')
+                    result.append(rank + suit)
             return result
         
-        # Подсчет очков
         def calculate_score(cards_list):
             total = 0
             for card in cards_list:
                 if isinstance(card, dict):
                     rank = card.get('R', 0)
-                    if rank in [1, 14]:  # Туз
-                        total += 1
-                    elif rank in [11, 12, 13]:  # J, Q, K
-                        total += 0
-                    elif 2 <= rank <= 10:
-                        total += rank
+                    if rank in [1, 14]: total += 1
+                    elif rank in [11, 12, 13]: total += 0
+                    elif 2 <= rank <= 10: total += rank
             return total % 10
         
         player_parsed = parse_cards(player_cards)
@@ -103,17 +106,17 @@ def get_game_data(game_id):
             'banker_cards': ' '.join(banker_parsed)
         }
     except Exception as e:
-        print(f"Ошибка API: {e}")
+        print(f"❌ API Error: {e}")
         return None
 
 async def send_game_message():
     global game_counter
     
+    print(f"⏳ Проверяем 1xBet API...")
     for game_id in GAME_IDS:
         game_data = get_game_data(game_id)
         
         if game_data and game_data['player_cards'] and game_data['banker_cards']:
-            # Формируем сообщение ТОЧНО как нужно
             player_side = f"{game_data['player_score']} ({game_data['player_cards']})"
             banker_side = f"✅{game_data['banker_score']} ({game_data['banker_cards']})"
             
@@ -122,34 +125,25 @@ async def send_game_message():
             
             try:
                 await bot.send_message(CHANNEL_ID, message)
-                print(f"✅ Отправлено #N{game_counter}: {message}")
+                print(f"✅ #N{game_counter} ОТПРАВЛЕНО В КАНАЛ!")
                 game_counter += 1
                 return True
             except Exception as e:
-                print(f"❌ Ошибка Telegram: {e}")
+                print(f"❌ Telegram Error: {e}")
                 return False
     
-    print("❌ Нет данных от 1xBet API")
+    print("❌ Нет данных от 1xBet")
     return False
 
 async def main():
-    print(f"🚀 Баккара статистика запущена! Стартуем с #N{game_counter}")
-    print("⏳ Мониторим 1xBet API...")
-    
-    last_states = {}
+    print(f"🚀 Баккара статистика #N{game_counter} запущена!")
     
     while True:
         try:
-            success = await send_game_message()
-            if success:
-                await asyncio.sleep(10)  # Пауза 10 сек между играми
-            else:
-                await asyncio.sleep(5)   # Быстрее пробуем снова
-        except KeyboardInterrupt:
-            print("🛑 Остановлено пользователем")
-            break
+            await send_game_message()
+            await asyncio.sleep(10)
         except Exception as e:
-            print(f"❌ Критическая ошибка: {e}")
+            print(f"❌ Ошибка: {e}")
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
