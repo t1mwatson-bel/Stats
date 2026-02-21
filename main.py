@@ -27,9 +27,6 @@ TOKEN = os.getenv("TOKEN")
 API_BASE = os.getenv("API_BASE", "https://1xlite-7636770.bar")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# Запасные ID на случай, если API не отдаст список
-FALLBACK_GAME_IDS = [697705521, 697704425]
-
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
@@ -42,128 +39,44 @@ HEADERS = {
 RANK_MAP = {1: 'A', 11: 'J', 12: 'Q', 13: 'K', 14: 'A'}
 SUIT_MAP = {1: '♥️', 2: '♠️', 3: '♣️', 4: '♦️'}
 
-# ===== ПОЛУЧЕНИЕ СПИСКА АКТИВНЫХ ИГР =====
-def get_live_games():
-    """Получает список текущих игр в баккару"""
+# ===== ПОИСК НОВЫХ ИГР =====
+def find_new_games(know_games):
+    """Ищет новые игры, которых еще нет в отслеживаемых"""
     url = f"{API_BASE}/service-api/LiveFeed/Get1x2_VZip"
     params = {
-        'sports': 236,  # ID баккары (может отличаться, попробуйте 235, 237 если не работает)
-        'count': 30,    # Количество игр
+        'sports': 236,
+        'count': 50,
         'mode': 4,
         'top': 'true',
         'partner': 5
     }
     
     try:
-        logger.info("🔍 Получаем список активных игр...")
-        response = requests.get(url, headers=HEADERS, params=params, timeout=15, verify=False)
+        logger.debug("🔍 Поиск новых игр...")
+        response = requests.get(url, headers=HEADERS, params=params, timeout=10, verify=False)
         
         if response.status_code == 200:
             data = response.json()
             if data and data.get('Success'):
                 games = data.get('Value', [])
-                game_ids = []
+                new_games = []
+                
                 for game in games:
                     if isinstance(game, dict):
                         game_id = game.get('I')
-                        if game_id:
-                            game_ids.append(game_id)
-                            logger.info(f"  ✅ Найдена игра ID: {game_id}")
-                return game_ids
-            else:
-                logger.warning("⚠️ API вернул Success=false при получении списка игр")
-                return []
-        else:
-            logger.error(f"❌ Ошибка HTTP {response.status_code} при получении списка игр")
-            return []
-    except Exception as e:
-        logger.error(f"❌ Ошибка при получении списка игр: {e}")
-        return []
-
-def get_active_game_ids():
-    """Возвращает список актуальных ID игр"""
-    game_ids = get_live_games()
-    if not game_ids:
-        logger.warning("⚠️ Не удалось получить список игр, использую запасные ID")
-        return FALLBACK_GAME_IDS
-    return game_ids[:10]  # Берем первые 10 игр
-
-# ===== ПРЯМАЯ ПРОВЕРКА API =====
-def test_api_connection():
-    logger.info("=" * 50)
-    logger.info("ТЕСТИРОВАНИЕ ПОДКЛЮЧЕНИЯ К API")
-    logger.info("=" * 50)
-    
-    success_count = 0
-    game_ids = get_active_game_ids()[:3]  # Проверяем первые 3 игры
-    
-    # Проверка основного домена
-    try:
-        response = requests.get(API_BASE, timeout=5, verify=False)
-        logger.info(f"Основной домен: {response.status_code}")
-    except Exception as e:
-        logger.error(f"Основной домен недоступен: {e}")
-    
-    if not game_ids:
-        logger.error("❌ Нет ID игр для проверки")
-        return False
-    
-    # Проверка данных для игр
-    for game_id in game_ids:
-        url = f"{API_BASE}/service-api/LiveFeed/GetGameZip"
-        params = {'id': game_id, 'country': 1, 'marketType': 1}
-        
-        try:
-            logger.info(f"Пробуем получить игру {game_id}...")
-            response = requests.get(url, headers=HEADERS, params=params, timeout=10, verify=False)
-            logger.info(f"Статус: {response.status_code}")
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data and data.get('Success'):
-                    logger.info(f"✅ Успешно! Есть данные для игры {game_id}")
-                    check_cards(data)
-                    success_count += 1
-                else:
-                    logger.warning(f"⚠️ API вернул Success=false для игры {game_id}")
-            else:
-                logger.error(f"❌ Ошибка HTTP {response.status_code} для игры {game_id}")
+                        if game_id and game_id not in know_games:
+                            new_games.append(game_id)
+                            logger.info(f"🆕 Найдена НОВАЯ игра: {game_id}")
                 
-        except Exception as e:
-            logger.error(f"❌ Ошибка при тестировании игры {game_id}: {e}")
+                return new_games
+    except Exception as e:
+        logger.debug(f"Ошибка поиска новых игр: {e}")
     
-    if success_count == 0:
-        logger.error("❌ НЕ УДАЛОСЬ ПОЛУЧИТЬ ДАННЫЕ НИ ПО ОДНОЙ ИГРЕ")
-        return False
-    else:
-        logger.info(f"✅ Успешно получены данные для {success_count} игр")
-        return True
+    return []
 
-def check_cards(data):
-    """Проверяет наличие карт в данных"""
-    if not data or not isinstance(data, dict):
-        return
-    
-    value = data.get('Value', {})
-    if not value:
-        return
-        
-    sc = value.get('SC', {})
-    if not sc:
-        return
-    
-    if 'S' in sc:
-        for item in sc['S']:
-            if isinstance(item, dict) and item.get('Key') in ['P', 'B']:
-                try:
-                    cards = json.loads(item.get('Value', '[]'))
-                    logger.info(f"  {item['Key']} карты: {cards}")
-                except:
-                    pass
-
-# ===== ФУНКЦИИ ДЛЯ РАБОТЫ С API =====
+# ===== ПРОВЕРКА ИГРЫ =====
 def get_game_details(game_id):
-    """Получает детали игры с правильными параметрами"""
+    """Получает детали игры"""
     url = f"{API_BASE}/service-api/LiveFeed/GetGameZip"
     params = {
         'id': game_id,
@@ -182,18 +95,13 @@ def get_game_details(game_id):
             data = response.json()
             if data and data.get('Success'):
                 return data
-            else:
-                logger.debug(f"API вернул Success=false для игры {game_id}")
-                return None
-        else:
-            logger.debug(f"HTTP {response.status_code} для игры {game_id}")
-            return None
     except Exception as e:
         logger.debug(f"Ошибка запроса для игры {game_id}: {e}")
-        return None
+    
+    return None
 
 def extract_cards(details):
-    """Извлекает карты из данных игры с защитой от ошибок"""
+    """Извлекает карты из данных игры"""
     if not details or not isinstance(details, dict):
         return [], []
     
@@ -222,10 +130,7 @@ def extract_cards(details):
                                     player_cards = cards if isinstance(cards, list) else []
                                 else:
                                     banker_cards = cards if isinstance(cards, list) else []
-                                logger.debug(f"Найдены карты {key}: {player_cards if key=='P' else banker_cards}")
-                        except json.JSONDecodeError:
-                            pass
-                        except Exception:
+                        except:
                             pass
         
         return player_cards, banker_cards
@@ -269,7 +174,7 @@ def calculate_score(cards):
     return total % 10
 
 def get_game_info(game_id):
-    """Получает информацию об игре с защитой от ошибок"""
+    """Получает информацию об игре"""
     details = get_game_details(game_id)
     
     if not details:
@@ -292,8 +197,7 @@ def get_game_info(game_id):
         'player_score': player_score,
         'banker_score': banker_score,
         'winner': winner,
-        'raw_player': player_cards,
-        'raw_banker': banker_cards
+        'has_cards': len(player_cards) > 0 or len(banker_cards) > 0
     }
     
     return result
@@ -314,7 +218,6 @@ def format_game_message(game):
 def send_telegram_message(chat_id, text):
     """Отправляет сообщение в Telegram"""
     if not TOKEN or not chat_id:
-        logger.error("TOKEN или CHAT_ID не заданы")
         return False
         
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -328,17 +231,14 @@ def send_telegram_message(chat_id, text):
         if response.status_code == 200:
             logger.info(f"✅ Сообщение отправлено в чат {chat_id}")
             return True
-        else:
-            logger.error(f"❌ Ошибка отправки: {response.text}")
-            return False
     except Exception as e:
         logger.error(f"❌ Ошибка при отправке: {e}")
-        return False
+    
+    return False
 
 def get_updates(offset=None):
     """Получает обновления от Telegram"""
     if not TOKEN:
-        logger.error("TOKEN не задан")
         return []
         
     url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
@@ -352,24 +252,20 @@ def get_updates(offset=None):
             return response.json().get('result', [])
     except Exception as e:
         logger.error(f"❌ Ошибка getUpdates: {e}")
+    
     return []
 
 # ===== ОСНОВНОЙ ЦИКЛ =====
 def main():
     logger.info("=" * 60)
-    logger.info("🚀 ЗАПУСК БОТА С ДИНАМИЧЕСКИМ ПОИСКОМ ИГР")
+    logger.info("🚀 ЗАПУСК БОТА С ПОИСКОМ НОВЫХ ИГР")
     logger.info("=" * 60)
     
-    # Проверяем наличие необходимых переменных
-    if not TOKEN:
-        logger.error("❌ TOKEN не задан! Проверьте файл .env")
-        return
-    
-    if not CHAT_ID:
-        logger.error("❌ CHAT_ID не задан! Проверьте файл .env")
-        return
-    
     # Проверяем токен
+    if not TOKEN or not CHAT_ID:
+        logger.error("❌ TOKEN или CHAT_ID не заданы")
+        return
+    
     try:
         response = requests.get(f"https://api.telegram.org/bot{TOKEN}/getMe", timeout=10)
         me = response.json()
@@ -382,58 +278,69 @@ def main():
         logger.error(f"❌ Ошибка проверки токена: {e}")
         return
     
-    # Получаем актуальные игры
-    logger.info("\n🔍 ПОЛУЧАЕМ СПИСОК АКТИВНЫХ ИГР...")
-    active_games = get_active_game_ids()
-    
-    if active_games and active_games != FALLBACK_GAME_IDS:
-        logger.info(f"✅ Найдено активных игр: {len(active_games)}")
-        logger.info(f"📋 ID первых 5 игр: {active_games[:5]}")
-    else:
-        logger.warning("⚠️ Используются запасные ID игр")
-    
-    # Тестируем API игры
-    logger.info("\n🔍 ПРОВЕРКА API ИГР...")
-    api_working = test_api_connection()
-    
-    # Пробуем сразу получить данные
-    logger.info("\n🔍 ПРОБУЕМ ПОЛУЧИТЬ ИГРЫ ПРЯМО СЕЙЧАС:")
-    games_found = 0
-    for game_id in active_games[:5]:  # Проверяем первые 5 игр
-        game = get_game_info(game_id)
-        if game:
-            message = format_game_message(game)
-            logger.info(f"✅ Игра {game_id}: {message}")
-            send_telegram_message(CHAT_ID, message)
-            games_found += 1
-            time.sleep(1)  # Небольшая задержка между отправками
-        else:
-            logger.info(f"❌ Игра {game_id}: данных нет")
-    
-    if games_found == 0:
-        logger.warning("⚠️ Нет активных игр с картами в данный момент")
-    
-    last_update_id = 0
-    last_games = {}
+    # Множество отслеживаемых игр
+    tracked_games = set()
+    game_states = {}  # Для отслеживания изменений
     send_count = 0
-    last_games_refresh = 0
+    last_update_id = 0
+    last_new_game_check = 0
     
-    logger.info("\n✅ Бот запущен и готов к работе!")
+    logger.info("\n✅ Бот запущен и ищет новые игры!")
     logger.info("=" * 60)
     
     while True:
         try:
-            # Обновляем список игр каждые 5 минут
             current_time = time.time()
-            if current_time - last_games_refresh > 300:  # 300 секунд = 5 минут
-                logger.info("🔄 Обновление списка активных игр...")
-                new_games = get_active_game_ids()
-                if new_games and new_games != FALLBACK_GAME_IDS:
-                    active_games = new_games
-                    logger.info(f"✅ Список обновлен. Найдено игр: {len(active_games)}")
-                last_games_refresh = current_time
             
-            # Обработка команд из Telegram
+            # 1. ПОИСК НОВЫХ ИГР (каждые 30 секунд)
+            if current_time - last_new_game_check > 30:
+                logger.info("🔍 Проверка новых игр...")
+                new_games = find_new_games(tracked_games)
+                
+                for game_id in new_games:
+                    tracked_games.add(game_id)
+                    logger.info(f"➕ Игра {game_id} добавлена в отслеживание")
+                    
+                    # Сразу проверяем, есть ли карты
+                    game_info = get_game_info(game_id)
+                    if game_info and game_info['has_cards']:
+                        msg = f"🆕 <b>Новая игра!</b>\n\n{format_game_message(game_info)}"
+                        send_telegram_message(CHAT_ID, msg)
+                        game_states[game_id] = f"{game_info['player_cards']}_{game_info['banker_cards']}"
+                        send_count += 1
+                
+                last_new_game_check = current_time
+            
+            # 2. ПРОВЕРКА АКТИВНЫХ ИГР (каждые 5 секунд)
+            if int(current_time) % 5 == 0:
+                for game_id in list(tracked_games):  # Используем list для безопасного удаления
+                    game_info = get_game_info(game_id)
+                    
+                    if not game_info or not game_info['has_cards']:
+                        # Игра больше не имеет карт - удаляем из отслеживания
+                        if game_id in tracked_games:
+                            tracked_games.remove(game_id)
+                            if game_id in game_states:
+                                del game_states[game_id]
+                            logger.info(f"➖ Игра {game_id} удалена из отслеживания (завершена)")
+                        continue
+                    
+                    # Проверяем изменения
+                    current_state = f"{game_info['player_cards']}_{game_info['banker_cards']}"
+                    if game_id not in game_states:
+                        # Новая игра с картами
+                        game_states[game_id] = current_state
+                        msg = f"🆕 <b>Новая игра!</b>\n\n{format_game_message(game_info)}"
+                        send_telegram_message(CHAT_ID, msg)
+                        send_count += 1
+                    elif game_states[game_id] != current_state:
+                        # Изменение в игре
+                        game_states[game_id] = current_state
+                        msg = f"⚡ <b>Изменение в игре {game_id}</b>\n\n{format_game_message(game_info)}"
+                        send_telegram_message(CHAT_ID, msg)
+                        send_count += 1
+            
+            # 3. ОБРАБОТКА КОМАНД
             updates = get_updates(last_update_id + 1)
             
             for update in updates:
@@ -449,65 +356,36 @@ def main():
                         send_telegram_message(chat_id, 
                             "🤖 Бот для баккары запущен!\n\n"
                             "Команды:\n"
-                            "/check - проверить игры сейчас\n"
-                            "/test - тест API\n"
                             "/status - статус бота\n"
-                            "/games - список активных игр"
+                            "/games - список отслеживаемых игр\n"
+                            "/check - принудительная проверка"
                         )
-                    
-                    elif text == '/games':
-                        msg = f"🎮 Активные игры ({len(active_games)}):\n"
-                        for gid in active_games[:10]:
-                            msg += f"• {gid}\n"
-                        send_telegram_message(chat_id, msg)
-                    
-                    elif text == '/test':
-                        send_telegram_message(chat_id, "🔍 Тестирую подключение к API...")
-                        if test_api_connection():
-                            send_telegram_message(chat_id, "✅ API работает!")
-                        else:
-                            send_telegram_message(chat_id, "❌ API не отвечает!")
                     
                     elif text == '/status':
                         msg = f"📊 Статус бота:\n"
-                        msg += f"🎮 Активных игр: {len(active_games)}\n"
+                        msg += f"🎮 Отслеживается игр: {len(tracked_games)}\n"
                         msg += f"📨 Отправлено сообщений: {send_count}\n"
-                        msg += f"🔌 API работает: {'✅' if api_working else '❌'}"
+                        send_telegram_message(chat_id, msg)
+                    
+                    elif text == '/games':
+                        if tracked_games:
+                            msg = f"🎮 Отслеживаемые игры ({len(tracked_games)}):\n"
+                            for gid in list(tracked_games)[:10]:
+                                msg += f"• {gid}\n"
+                        else:
+                            msg = "❌ Нет отслеживаемых игр"
                         send_telegram_message(chat_id, msg)
                     
                     elif text == '/check':
-                        send_telegram_message(chat_id, "🔍 Проверяю игры...")
-                        found = 0
-                        for game_id in active_games[:5]:
-                            game = get_game_info(game_id)
-                            if game:
-                                send_telegram_message(chat_id, format_game_message(game))
-                                found += 1
-                                time.sleep(1)
-                        if found == 0:
-                            send_telegram_message(chat_id, "❌ Нет данных по играм")
+                        send_telegram_message(chat_id, "🔍 Принудительная проверка...")
+                        # Просто запускаем поиск новых игр сейчас
+                        new_games = find_new_games(tracked_games)
+                        if new_games:
+                            send_telegram_message(chat_id, f"✅ Найдено новых игр: {len(new_games)}")
                         else:
-                            send_telegram_message(chat_id, f"✅ Найдено игр: {found}")
-                            send_count += found
+                            send_telegram_message(chat_id, "❌ Новых игр не найдено")
             
-            # Автоматическая проверка каждые 10 секунд
-            if int(current_time) % 10 < 2:
-                logger.info("🔄 Автоматическая проверка игр...")
-                
-                for game_id in active_games[:5]:  # Проверяем первые 5 игр
-                    game = get_game_info(game_id)
-                    if game:
-                        # Создаем ключ состояния на основе карт
-                        state_key = f"{game['player_cards']}_{game['banker_cards']}"
-                        
-                        if last_games.get(game_id) != state_key:
-                            logger.info(f"⚡ ИЗМЕНЕНИЕ в игре {game_id}")
-                            send_telegram_message(CHAT_ID, format_game_message(game))
-                            last_games[game_id] = state_key
-                            send_count += 1
-                            time.sleep(1)  # Задержка между отправками
-            
-            time.sleep(2)
+            time.sleep(1)
             
         except KeyboardInterrupt:
             logger.info("👋 Бот остановлен")
