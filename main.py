@@ -23,16 +23,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ===== ПЕРЕМЕННЫЕ =====
-TOKEN = os.getenv("TOKEN")  # Берет значение из переменной TOKEN в .env
+TOKEN = os.getenv("TOKEN")  # ИСПРАВЛЕНО: берем по имени переменной
 API_BASE = os.getenv("API_BASE", "https://1xlite-7636770.bar")
-CHAT_ID = os.getenv("CHAT_ID")  # Берет значение из переменной CHAT_ID в .env
+CHAT_ID = os.getenv("CHAT_ID")  # ИСПРАВЛЕНО: берем по имени переменной
 GAME_IDS = [697705521, 697704425]
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Referer': 'https://1xlite-7636770.bar/',
+    'Referer': f'{API_BASE}/',
 }
 
 # Маппинг рангов и мастей
@@ -44,6 +44,8 @@ def test_api_connection():
     logger.info("=" * 50)
     logger.info("ТЕСТИРОВАНИЕ ПОДКЛЮЧЕНИЯ К API")
     logger.info("=" * 50)
+    
+    success_count = 0
     
     # Проверка основного домена
     try:
@@ -64,9 +66,10 @@ def test_api_connection():
             
             if response.status_code == 200:
                 data = response.json()
-                if data.get('Success'):
+                if data and data.get('Success'):
                     logger.info(f"✅ Успешно! Есть данные для игры {game_id}")
                     check_cards(data)
+                    success_count += 1
                 else:
                     logger.warning(f"API вернул Success=false для игры {game_id}")
             else:
@@ -75,36 +78,59 @@ def test_api_connection():
         except Exception as e:
             logger.error(f"Ошибка при тестировании игры {game_id}: {e}")
     
-    logger.error("❌ НЕ УДАЛОСЬ ПОЛУЧИТЬ ДАННЫЕ НИ ОДНОЙ ИГРЫ")
+    if success_count == 0:
+        logger.error("❌ НЕ УДАЛОСЬ ПОЛУЧИТЬ ДАННЫЕ НИ ОДНОЙ ИГРЫ")
+        return False
+    else:
+        logger.info(f"✅ Успешно получены данные для {success_count} игр")
+        return True
 
 def check_cards(data):
+    """Проверяет наличие карт в данных"""
+    if not data or not isinstance(data, dict):
+        return
+    
     value = data.get('Value', {})
+    if not value:
+        return
+        
     sc = value.get('SC', {})
+    if not sc:
+        return
     
     if 'S' in sc:
         for item in sc['S']:
-            if item.get('Key') in ['P', 'B']:
-                cards = json.loads(item.get('Value', '[]'))
-                logger.info(f"  {item['Key']} карты: {cards}")
+            if isinstance(item, dict) and item.get('Key') in ['P', 'B']:
+                try:
+                    cards = json.loads(item.get('Value', '[]'))
+                    logger.info(f"  {item['Key']} карты: {cards}")
+                except:
+                    pass
 
 # ===== ФУНКЦИИ ДЛЯ РАБОТЫ С API =====
 def get_game_details(game_id):
+    """Получает детали игры с правильными параметрами"""
     url = f"{API_BASE}/service-api/LiveFeed/GetGameZip"
     params = {
         'id': game_id,
+        'country': 1,
+        'marketType': 1,
         'isSubGames': 'true',
         'GroupEvents': 'true',
         'countevents': 250,
         'grMode': 4,
-        'country': 1,
-        'marketType': 1,
         'isNewBuilder': 'true'
     }
     
     try:
         response = requests.get(url, headers=HEADERS, params=params, timeout=15, verify=False)
         if response.status_code == 200:
-            return response.json()
+            data = response.json()
+            if data and data.get('Success'):
+                return data
+            else:
+                logger.warning(f"API вернул Success=false для игры {game_id}")
+                return None
         else:
             logger.error(f"HTTP {response.status_code} для игры {game_id}")
             return None
@@ -113,34 +139,41 @@ def get_game_details(game_id):
         return None
 
 def extract_cards(details):
-    if not details:
+    """Извлекает карты из данных игры с защитой от ошибок"""
+    if not details or not isinstance(details, dict):
+        logger.warning("extract_cards: details is None или не словарь")
         return [], []
     
     try:
         value = details.get('Value', {})
+        if not value:
+            return [], []
+            
         sc = value.get('SC', {})
+        if not sc:
+            return [], []
         
         player_cards = []
         banker_cards = []
         
-        if 'S' in sc:
+        if 'S' in sc and isinstance(sc['S'], list):
             for item in sc['S']:
                 if isinstance(item, dict):
                     key = item.get('Key')
                     if key in ['P', 'B']:
                         try:
-                            cards = json.loads(item.get('Value', '[]'))
-                            if key == 'P':
-                                player_cards = cards
-                            else:
-                                banker_cards = cards
-                            logger.info(f"Найдены карты {key}: {cards}")
+                            cards_value = item.get('Value', '[]')
+                            if cards_value:
+                                cards = json.loads(cards_value)
+                                if key == 'P':
+                                    player_cards = cards if isinstance(cards, list) else []
+                                else:
+                                    banker_cards = cards if isinstance(cards, list) else []
+                                logger.info(f"Найдены карты {key}: {player_cards if key=='P' else banker_cards}")
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Ошибка парсинга JSON для {key}: {e}")
                         except Exception as e:
-                            logger.error(f"Ошибка парсинга карт {key}: {e}")
-        
-        for item in sc.get('S', []):
-            if item.get('Key') == 'S':
-                logger.info(f"Статус игры: {item.get('Value')}")
+                            logger.error(f"Ошибка обработки карт {key}: {e}")
         
         return player_cards, banker_cards
     except Exception as e:
@@ -148,6 +181,7 @@ def extract_cards(details):
         return [], []
 
 def parse_card(card):
+    """Преобразует карту в читаемый вид"""
     if not isinstance(card, dict):
         return '??'
     
@@ -166,6 +200,10 @@ def parse_card(card):
     return f"{rank_str}{suit_str}"
 
 def calculate_score(cards):
+    """Вычисляет счет в баккаре"""
+    if not cards or not isinstance(cards, list):
+        return 0
+    
     total = 0
     for card in cards:
         if isinstance(card, dict):
@@ -179,6 +217,7 @@ def calculate_score(cards):
     return total % 10
 
 def get_game_info(game_id):
+    """Получает информацию об игре с защитой от ошибок"""
     logger.info(f"Получение данных для игры {game_id}...")
     details = get_game_details(game_id)
     
@@ -199,8 +238,8 @@ def get_game_info(game_id):
     
     result = {
         'game_id': game_id,
-        'player_cards': [parse_card(c) for c in player_cards],
-        'banker_cards': [parse_card(c) for c in banker_cards],
+        'player_cards': [parse_card(c) for c in player_cards if isinstance(c, dict)],
+        'banker_cards': [parse_card(c) for c in banker_cards if isinstance(c, dict)],
         'player_score': player_score,
         'banker_score': banker_score,
         'winner': winner,
@@ -212,15 +251,24 @@ def get_game_info(game_id):
     return result
 
 def format_game_message(game):
+    """Форматирует сообщение об игре для Telegram"""
+    if not game:
+        return "Нет данных об игре"
+    
     return (
         f"🎲 <b>Игра {game['game_id']}</b>\n"
-        f"Player: {' '.join(game['player_cards'])} = {game['player_score']}\n"
-        f"Banker: {' '.join(game['banker_cards'])} = {game['banker_score']}\n"
-        f"Победитель: {game['winner']}"
+        f"👤 Player: {' '.join(game['player_cards'])} = {game['player_score']}\n"
+        f"🏦 Banker: {' '.join(game['banker_cards'])} = {game['banker_score']}\n"
+        f"🏆 Победитель: {game['winner']}"
     )
 
 # ===== TELEGRAM ФУНКЦИИ =====
 def send_telegram_message(chat_id, text):
+    """Отправляет сообщение в Telegram"""
+    if not TOKEN or not chat_id:
+        logger.error("TOKEN или CHAT_ID не заданы")
+        return False
+        
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     data = {
         'chat_id': chat_id,
@@ -240,6 +288,11 @@ def send_telegram_message(chat_id, text):
         return False
 
 def get_updates(offset=None):
+    """Получает обновления от Telegram"""
+    if not TOKEN:
+        logger.error("TOKEN не задан")
+        return []
+        
     url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
     params = {'timeout': 30}
     if offset:
@@ -259,9 +312,19 @@ def main():
     logger.info("🚀 ЗАПУСК БОТА С ПРЯМОЙ ПРОВЕРКОЙ ИГР")
     logger.info("=" * 60)
     
+    # Проверяем наличие необходимых переменных
+    if not TOKEN:
+        logger.error("❌ TOKEN не задан! Проверьте файл .env")
+        return
+    
+    if not CHAT_ID:
+        logger.error("❌ CHAT_ID не задан! Проверьте файл .env")
+        return
+    
     # Проверяем токен
     try:
-        me = requests.get(f"https://api.telegram.org/bot{TOKEN}/getMe").json()
+        response = requests.get(f"https://api.telegram.org/bot{TOKEN}/getMe", timeout=10)
+        me = response.json()
         if me.get('ok'):
             logger.info(f"✅ Бот авторизован: @{me['result']['username']}")
         else:
@@ -275,18 +338,19 @@ def main():
     logger.info("\n🔍 ПРОВЕРКА API ИГР...")
     api_working = test_api_connection()
     
-    if not api_working:
-        logger.error("❌ API игр не работает! Бот не сможет получать данные.")
-    
     # Пробуем сразу получить данные
     logger.info("\n🔍 ПРОБУЕМ ПОЛУЧИТЬ ИГРЫ СЕЙЧАС:")
     for game_id in GAME_IDS:
         game = get_game_info(game_id)
         if game:
-            logger.info(f"✅ Игра {game_id}: {format_game_message(game)}")
-            send_telegram_message(CHAT_ID, format_game_message(game))  # Отправляем сообщение в канал
+            message = format_game_message(game)
+            logger.info(f"✅ Игра {game_id}: {message}")
+            send_telegram_message(CHAT_ID, message)
         else:
             logger.info(f"❌ Игра {game_id}: данных нет")
+    
+    if not api_working:
+        logger.warning("⚠️ API игр не работает! Бот продолжит работу, но может не получать данные.")
     
     last_update_id = 0
     last_games = {}
@@ -327,7 +391,8 @@ def main():
                     elif text == '/status':
                         msg = f"📊 Статус бота:\n"
                         msg += f"Отслеживается игр: {len(GAME_IDS)}\n"
-                        msg += f"Последних отправок: {send_count}"
+                        msg += f"Последних отправок: {send_count}\n"
+                        msg += f"API работает: {'✅' if api_working else '❌'}"
                         send_telegram_message(chat_id, msg)
                     
                     elif text == '/check':
@@ -341,6 +406,7 @@ def main():
                             else:
                                 send_telegram_message(chat_id, f"❌ Нет данных для игры {game_id}")
             
+            # Автоматическая проверка каждые 10 секунд
             current_time = int(time.time())
             if current_time % 10 < 2:
                 logger.info("🔄 Автоматическая проверка игр...")
@@ -348,12 +414,14 @@ def main():
                 for game_id in GAME_IDS:
                     game = get_game_info(game_id)
                     if game:
+                        # Создаем ключ состояния на основе карт
                         state_key = f"{game['player_cards']}_{game['banker_cards']}"
                         
                         if last_games.get(game_id) != state_key:
-                            logger.info(f"⚡ ИЗМЕНЕНИЕ в игре {game_id}: {state_key}")
-                            send_telegram_message(CHAT_ID, format_game_message(game))  # Отправляем изменение в канал
+                            logger.info(f"⚡ ИЗМЕНЕНИЕ в игре {game_id}")
+                            send_telegram_message(CHAT_ID, format_game_message(game))
                             last_games[game_id] = state_key
+                            send_count += 1
             
             time.sleep(2)
             
