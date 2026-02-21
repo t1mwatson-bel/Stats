@@ -23,9 +23,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ===== ПЕРЕМЕННЫЕ =====
-TOKEN = os.getenv("8596594907:AAHUQjk-ik3LGV7kI-4XhCn-fw1T-FHo6wU")
+# ✅ ИСПРАВЛЕНО: теперь правильно читаем по ИМЕНИ переменной
+TOKEN = os.getenv("TOKEN")
 API_BASE = os.getenv("API_BASE", "https://1xlite-7636770.bar")
-CHAT_ID = os.getenv("-1003179573402")  # Добавьте переменную для chat_id
+CHAT_ID = os.getenv("CHAT_ID")
 GAME_IDS = [697705521, 697704425]
 
 HEADERS = {
@@ -284,7 +285,7 @@ def main():
         game = get_game_info(game_id)
         if game:
             logger.info(f"✅ Игра {game_id}: {format_game_message(game)}")
-            send_telegram_message(CHAT_ID, format_game_message(game))  # Отправляем сообщение в канал
+            send_telegram_message(CHAT_ID, format_game_message(game))
         else:
             logger.info(f"❌ Игра {game_id}: данных нет")
     
@@ -352,7 +353,7 @@ def main():
                         
                         if last_games.get(game_id) != state_key:
                             logger.info(f"⚡ ИЗМЕНЕНИЕ в игре {game_id}: {state_key}")
-                            send_telegram_message(CHAT_ID, format_game_message(game))  # Отправляем изменение в канал
+                            send_telegram_message(CHAT_ID, format_game_message(game))
                             last_games[game_id] = state_key
             
             time.sleep(2)
