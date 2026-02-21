@@ -1,19 +1,33 @@
 import os
-import requests
+import sys
 import json
 import time
+import logging
+import requests
 from datetime import datetime
 from collections import defaultdict
 import urllib3
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Отключаем предупреждения о SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ========== НАСТРОЙКИ ==========
+# ===== НАСТРОЙКА ЛОГИРОВАНИЯ =====
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('bot.log')
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# ===== ПЕРЕМЕННЫЕ =====
 TOKEN = os.getenv("TOKEN", "8596594907:AAHUQjk-ik3LGV7kI-4XhCn-fw1T-FHo6wU")
 API_BASE = "https://1xlite-7636770.bar"
 GAME_IDS = [697705521, 697704425]  # ID игр для отслеживания
-# ================================
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -22,17 +36,12 @@ HEADERS = {
     'Referer': 'https://1xlite-7636770.bar/',
 }
 
-# Маппинг рангов (константа)
 RANK_MAP = {1: 'A', 11: 'J', 12: 'Q', 13: 'K', 14: 'A'}
-
-# ===== ЭТО И ЕСТЬ "ПАМЯТЬ" =====
-# Словарь, который хранит маппинг мастей для каждой игры
-# Ключ: ID игры, Значение: {код_масти: символ}
-# Например: {697705521: {1: '♥️', 2: '♠️', 3: '♣️', 4: '♦️'}}
 game_suit_mappings = {}
 
+# ===== ФУНКЦИИ РАБОТЫ С API =====
 def get_game_details(game_id):
-    """Получает детали игры из API 1x"""
+    """Получает детали игры из API"""
     url = f"{API_BASE}/service-api/LiveFeed/GetGameZip"
     params = {
         'id': game_id,
@@ -44,63 +53,83 @@ def get_game_details(game_id):
         'marketType': 1,
         'isNewBuilder': 'true'
     }
+    
+    logger.info(f"Запрос к API для игры {game_id}")
     try:
         response = requests.get(url, headers=HEADERS, params=params, timeout=15, verify=False)
+        logger.info(f"Статус ответа: {response.status_code}")
+        
         if response.status_code == 200:
-            return response.json()
+            data = response.json()
+            logger.info(f"Успешно получены данные для игры {game_id}")
+            return data
         else:
-            print(f"HTTP {response.status_code} для игры {game_id}")
+            logger.error(f"Ошибка HTTP {response.status_code} для игры {game_id}")
+            logger.error(f"Ответ: {response.text[:200]}")
             return None
+    except requests.exceptions.Timeout:
+        logger.error(f"Таймаут при запросе игры {game_id}")
+        return None
+    except requests.exceptions.ConnectionError:
+        logger.error(f"Ошибка подключения для игры {game_id}")
+        return None
     except Exception as e:
-        print(f"Ошибка запроса для игры {game_id}: {e}")
+        logger.error(f"Неизвестная ошибка для игры {game_id}: {e}")
         return None
 
 def extract_cards_from_api(details):
-    """Извлекает сырые данные карт игрока и банкира"""
-    if not details or not details.get('Value'):
+    """Извлекает карты из API ответа"""
+    if not details:
+        logger.error("Нет данных для извлечения карт")
+        return [], []
+    
+    try:
+        value = details.get('Value', {})
+        sc = value.get('SC', {})
+        
+        logger.info(f"Структура SC: {list(sc.keys())}")
+        
+        player_cards = []
+        banker_cards = []
+        
+        if 'S' in sc:
+            logger.info(f"Найдено {len(sc['S'])} элементов в S")
+            for item in sc['S']:
+                if isinstance(item, dict):
+                    key = item.get('Key')
+                    logger.info(f"Найден ключ: {key}")
+                    
+                    if key in ['P', 'B']:
+                        try:
+                            cards_value = item.get('Value', '[]')
+                            cards = json.loads(cards_value)
+                            logger.info(f"Карты {key}: {cards}")
+                            
+                            if key == 'P':
+                                player_cards = cards
+                            else:
+                                banker_cards = cards
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Ошибка парсинга JSON для {key}: {e}")
+        
+        logger.info(f"Извлечено карт: Player={len(player_cards)}, Banker={len(banker_cards)}")
+        return player_cards, banker_cards
+        
+    except Exception as e:
+        logger.error(f"Ошибка в extract_cards_from_api: {e}")
         return [], []
 
-    sc = details['Value'].get('SC', {})
-    player_cards = []
-    banker_cards = []
-
-    for item in sc.get('S', []):
-        if isinstance(item, dict):
-            key = item.get('Key')
-            if key in ['P', 'B']:
-                try:
-                    cards = json.loads(item.get('Value', '[]'))
-                    if key == 'P':
-                        player_cards = cards
-                    else:
-                        banker_cards = cards
-                except json.JSONDecodeError:
-                    print(f"Ошибка парсинга JSON для {key}")
-    return player_cards, banker_cards
-
-# ===== ЗДЕСЬ ПРОИСХОДИТ ЗАПОМИНАНИЕ =====
 def analyze_suit_mapping(player_cards, banker_cards, game_id):
-    """
-    СОЗДАЕТ И ЗАПОМИНАЕТ маппинг кодов мастей в символы.
-    
-    Важно: 
-    - Если маппинг УЖЕ ЕСТЬ для этого game_id - просто возвращаем его
-    - Если маппинга НЕТ - создаем и сохраняем навсегда
-    - Больше НИКОГДА не меняем для этой игры
-    """
-    
-    # ===== ПРОВЕРКА ПАМЯТИ =====
-    # Смотрим, есть ли уже сохраненный маппинг для этой игры
+    """Создает маппинг мастей"""
     if game_id in game_suit_mappings:
-        print(f"🔄 Использую сохраненный маппинг для игры {game_id}")
+        logger.info(f"Использую существующий маппинг для игры {game_id}")
         return game_suit_mappings[game_id]
-
-    print(f"🔍 Создаю новый маппинг для игры {game_id}...")
+    
+    logger.info(f"Создаю новый маппинг для игры {game_id}")
     
     all_cards = player_cards + banker_cards
-    suit_stats = defaultdict(lambda: {'count': 0, 'rank_sum': 0, 'high_cards': 0})
-
-    # Собираем статистику по кодам мастей
+    suit_stats = defaultdict(lambda: {'count': 0, 'rank_sum': 0})
+    
     for card in all_cards:
         if isinstance(card, dict):
             suit_code = card.get('S')
@@ -108,75 +137,50 @@ def analyze_suit_mapping(player_cards, banker_cards, game_id):
             if suit_code and rank and suit_code != 0:
                 suit_stats[suit_code]['count'] += 1
                 suit_stats[suit_code]['rank_sum'] += rank
-                if rank in [1, 11, 12, 13, 14]:  # Высокие карты
-                    suit_stats[suit_code]['high_cards'] += 1
-
-    # Если данных мало, создаем временный маппинг
-    if len(suit_stats) < 4:
-        mapping = {code: f'?{code}' for code in suit_stats.keys()}
-    else:
-        # Вычисляем средний ранг для каждой масти
-        suit_avg_rank = {}
-        for code, stats in suit_stats.items():
-            suit_avg_rank[code] = stats['rank_sum'] / stats['count']
-
-        # Сортируем по среднему рангу
-        sorted_suits = sorted(suit_avg_rank.items(), key=lambda x: x[1], reverse=True)
-        
-        # Традиционный порядок мастей
-        suit_symbols = ['♥️', '♠️', '♣️', '♦️']
-
-        mapping = {}
-        for i, (suit_code, _) in enumerate(sorted_suits):
-            if i < len(suit_symbols):
-                mapping[suit_code] = suit_symbols[i]
-            else:
-                mapping[suit_code] = f'?{suit_code}'
-
-    # ===== СОХРАНЕНИЕ В ПАМЯТЬ =====
-    # Записываем созданный маппинг в глобальный словарь
-    # Теперь он будет использоваться ВСЕГДА для этой игры
+    
+    logger.info(f"Статистика мастей: {dict(suit_stats)}")
+    
+    # Простой маппинг (для теста)
+    mapping = {1: '♥️', 2: '♠️', 3: '♣️', 4: '♦️'}
     game_suit_mappings[game_id] = mapping
-    print(f"✅ Маппинг сохранен для игры {game_id}: {mapping}")
+    logger.info(f"Маппинг сохранен: {mapping}")
     
     return mapping
 
 def parse_card(card_dict, game_id):
-    """Преобразует карту в строку, используя сохраненный маппинг"""
+    """Преобразует карту в строку"""
     if not isinstance(card_dict, dict):
         return '??'
-
+    
     rank_num = card_dict.get('R')
     suit_code = card_dict.get('S', 0)
-
-    # Определяем ранг
+    
+    # Ранг
     if rank_num in RANK_MAP:
         rank = RANK_MAP[rank_num]
     elif rank_num and 2 <= rank_num <= 10:
         rank = str(rank_num)
     else:
         rank = '?'
-
-    # Определяем масть
+    
+    # Масть
     if suit_code == 0:
-        suit = '?'  # Закрытая карта
+        suit = '?'
     else:
-        # ===== ИСПОЛЬЗОВАНИЕ ПАМЯТИ =====
-        # Берем маппинг из сохраненного словаря
         mapping = game_suit_mappings.get(game_id, {})
         suit = mapping.get(suit_code, f'?{suit_code}')
-
+    
     return f"{rank}{suit}"
 
 def calculate_score(cards):
-    """Вычисляет сумму очков в баккаре"""
+    """Вычисляет очки"""
     total = 0
     for card in cards:
         if isinstance(card, dict):
             rank = card.get('R', 0)
-            if rank in [1, 14]:  # Туз = 1
+            if rank in [1, 14]:
                 total += 1
-            elif rank in [11, 12, 13]:  # Валет, Дама, Король = 0
+            elif rank in [11, 12, 13]:
                 total += 0
             elif rank and 2 <= rank <= 10:
                 total += rank
@@ -192,29 +196,30 @@ def determine_winner(player_score, banker_score):
         return 'Tie'
 
 def get_game_data(game_id, game_number):
-    """Получает и анализирует данные игры"""
+    """Получает данные игры"""
+    logger.info(f"Получение данных для игры {game_id} (номер {game_number})")
+    
     details = get_game_details(game_id)
     if not details:
+        logger.error(f"Не удалось получить данные для игры {game_id}")
         return None
-
-    # Извлекаем карты
+    
     player_cards, banker_cards = extract_cards_from_api(details)
-
-    # ===== ВЫЗОВ ФУНКЦИИ С ПАМЯТЬЮ =====
-    # Если маппинга еще нет - создаст и запомнит
-    # Если уже есть - просто вернет сохраненный
+    
+    if not player_cards and not banker_cards:
+        logger.warning(f"Нет карт для игры {game_id}")
+        return None
+    
     analyze_suit_mapping(player_cards, banker_cards, game_id)
-
-    # Вычисляем очки
+    
     player_score = calculate_score(player_cards)
     banker_score = calculate_score(banker_cards)
     winner = determine_winner(player_score, banker_score)
-
-    # Преобразуем карты
+    
     player_cards_str = [parse_card(c, game_id) for c in player_cards]
     banker_cards_str = [parse_card(c, game_id) for c in banker_cards]
-
-    return {
+    
+    result = {
         'game_number': game_number,
         'game_id': game_id,
         'timestamp': datetime.now().strftime('%H:%M:%S'),
@@ -222,65 +227,110 @@ def get_game_data(game_id, game_number):
         'banker_cards': banker_cards_str,
         'player_score': player_score,
         'banker_score': banker_score,
-        'winner': winner,
-        'suit_mapping': game_suit_mappings.get(game_id, {})
+        'winner': winner
     }
+    
+    logger.info(f"Результат игры {game_id}: Player={player_cards_str}, Banker={banker_cards_str}")
+    return result
 
-def display_game(game_data):
-    """Выводит данные игры"""
-    if not game_data:
-        return
+# ===== TELEGRAM BOT =====
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /start"""
+    chat_id = update.effective_chat.id
+    logger.info(f"Получена команда /start от чата {chat_id}")
+    
+    await update.message.reply_text(
+        "🤖 Бот для отслеживания баккары запущен!\n\n"
+        f"Отслеживаю игры: {GAME_IDS}\n\n"
+        "Команды:\n"
+        "/status - проверить статус\n"
+        "/force - принудительно проверить игры"
+    )
 
-    p_cards = ' '.join(game_data['player_cards']) if game_data['player_cards'] else '?'
-    b_cards = ' '.join(game_data['banker_cards']) if game_data['banker_cards'] else '?'
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проверка статуса"""
+    chat_id = update.effective_chat.id
+    logger.info(f"Запрос статуса от чата {chat_id}")
+    
+    msg = f"🎲 **Текущий статус**\n\n"
+    msg += f"Отслеживается игр: {len(GAME_IDS)}\n\n"
+    
+    for game_id in GAME_IDS:
+        msg += f"**Игра {game_id}**\n"
+        mapping = game_suit_mappings.get(game_id, {})
+        msg += f"Маппинг: {mapping}\n"
+        
+        # Пробуем получить данные
+        data = get_game_data(game_id, 0)
+        if data:
+            msg += f"Player: {data['player_cards']}\n"
+            msg += f"Banker: {data['banker_cards']}\n"
+            msg += f"Счет: {data['player_score']}:{data['banker_score']}\n"
+        else:
+            msg += "❌ Нет данных\n"
+        msg += "\n"
+    
+    await update.message.reply_text(msg)
 
-    if game_data['winner'] == 'Player':
-        winner_emoji = '👤'
-    elif game_data['winner'] == 'Banker':
-        winner_emoji = '🏦'
-    else:
-        winner_emoji = '🤝'
+async def force_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Принудительная проверка"""
+    chat_id = update.effective_chat.id
+    logger.info(f"Принудительная проверка от чата {chat_id}")
+    
+    await update.message.reply_text("🔍 Проверяю игры...")
+    
+    for game_id in GAME_IDS:
+        data = get_game_data(game_id, 0)
+        if data:
+            msg = (
+                f"🎲 **Игра {game_id}**\n"
+                f"Player: {' '.join(data['player_cards'])} = {data['player_score']}\n"
+                f"Banker: {' '.join(data['banker_cards'])} = {data['banker_score']}\n"
+                f"Победитель: {data['winner']}"
+            )
+            await update.message.reply_text(msg)
+        else:
+            await update.message.reply_text(f"❌ Нет данных для игры {game_id}")
 
-    print(f"\n[{game_data['timestamp']}] Игра #{game_data['game_number']} (ID: {game_data['game_id']})")
-    print(f"👤 Player: {p_cards} = {game_data['player_score']}")
-    print(f"🏦 Banker: {b_cards} = {game_data['banker_score']}")
-    print(f"🏆 Победитель: {winner_emoji} {game_data['winner']}")
+# ===== ФОНОВЫЙ МОНИТОРИНГ =====
+async def monitor_games(context: ContextTypes.DEFAULT_TYPE):
+    """Периодическая проверка игр"""
+    chat_id = context.job.chat_id
+    logger.info(f"Фоновая проверка игр для чата {chat_id}")
+    
+    for game_id in GAME_IDS:
+        data = get_game_data(game_id, 0)
+        if data and data['player_cards']:  # Если есть карты
+            msg = (
+                f"🎲 **Новое обновление игры {game_id}**\n"
+                f"Player: {' '.join(data['player_cards'])} = {data['player_score']}\n"
+                f"Banker: {' '.join(data['banker_cards'])} = {data['banker_score']}"
+            )
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=msg)
+                logger.info(f"Отправлено обновление для игры {game_id}")
+            except Exception as e:
+                logger.error(f"Ошибка отправки сообщения: {e}")
 
-    if game_data['suit_mapping']:
-        mapping_str = ', '.join([f"{k}:{v}" for k, v in game_data['suit_mapping'].items()])
-        print(f"🔍 Маппинг: {mapping_str}")
-
+# ===== ЗАПУСК =====
 def main():
-    print("🚀 МОНИТОРИНГ С ЗАПОМИНАНИЕМ МАСТЕЙ")
-    print("=" * 70)
-
-    iteration = 0
-    last_game_states = {game_id: '' for game_id in GAME_IDS}
-
-    try:
-        while True:
-            iteration += 1
-            print(f"\n--- Цикл #{iteration} ---")
-
-            for game_id in GAME_IDS:
-                game_data = get_game_data(game_id, iteration)
-
-                if game_data:
-                    state_key = f"{game_data['player_cards']}_{game_data['banker_cards']}"
-                    if last_game_states[game_id] != state_key:
-                        display_game(game_data)
-                        last_game_states[game_id] = state_key
-                else:
-                    print(f"❌ Игра {game_id}: нет данных")
-
-            print("\n⏳ Ожидание 5 секунд...")
-            time.sleep(5)
-
-    except KeyboardInterrupt:
-        print("\n\n📊 ИТОГОВАЯ ПАМЯТЬ МАСТЕЙ:")
-        for game_id, mapping in game_suit_mappings.items():
-            print(f"Игра {game_id}: {mapping}")
-        print("\n👋 Завершение.")
+    """Главная функция"""
+    logger.info("🚀 Запуск бота...")
+    logger.info(f"Токен: {TOKEN[:5]}...{TOKEN[-5:]}")
+    logger.info(f"API_BASE: {API_BASE}")
+    logger.info(f"GAME_IDS: {GAME_IDS}")
+    
+    # Создаем приложение
+    application = Application.builder().token(TOKEN).build()
+    
+    # Добавляем обработчики команд
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("force", force_check))
+    
+    # Запускаем
+    logger.info("Бот запущен и готов к работе!")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
