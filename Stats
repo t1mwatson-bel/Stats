@@ -7,8 +7,8 @@ urllib3.disable_warnings()
 # ========== НАСТРОЙКИ ==========
 API_BASE = "https://1xlite-7636770.bar"
 GAME_IDS = [697705521, 697704425]
-TOKEN = "1163348874:AAFgZEXveILvD4MbhQ8jiLTwIxs4puYhmq0"
-CHANNEL_ID = -1003842401391
+TOKEN = "8596594907:AAHUQjk-ik3LGV7kI-4XhCn-fw1T-FHo6wU"
+CHANNEL_ID = -1003179573402
 
 HEADERS = {'User-Agent':'Mozilla/5.0','Accept':'application/json,*/*','Referer':'https://1xlite-7636770.bar/'}
 SUIT_MAP = {1:'♥️', 2:'♠️', 3:'♣️', 4:'♦️'}
