@@ -128,7 +128,7 @@ async function monitorGame(page, gameNumber) {
         });
         
         if (isGameOver) {
-            // ✅ Сначала получаем карты и отправляем результат
+            // Сначала получаем карты и отправляем результат
             const cards = await getCards(page);
             
             if (cards.player.length > 0 || cards.banker.length > 0) {
@@ -150,7 +150,7 @@ async function monitorGame(page, gameNumber) {
                 await sendOrEditTelegram(message);
             }
             
-            // ✅ Потом ждем 10 секунд и закрываем
+            // Потом ждем 10 секунд и закрываем
             console.log('Жду 10 секунд перед закрытием...');
             await page.waitForTimeout(10000);
             break;
@@ -217,23 +217,34 @@ async function run() {
         await page.click(`a[href="${activeLink}"]`);
         await page.waitForTimeout(3000);
         
-        // Получаем номер стола
+        // ПОЛУЧАЕМ НОМЕР СТОЛА С ПРОВЕРКОЙ
         let gameNumber = await page.evaluate(() => {
             const el = document.querySelector('.dashboard-game-info__additional-info');
             return el ? el.textContent.trim() : null;
         });
         
+        // ИСПРАВЛЕНИЕ НУМЕРАЦИИ
         if (!gameNumber) {
+            // Если номера нет на сайте - берем следующий из файла
             gameNumber = (parseInt(lastGameNumber) + 1).toString();
-            console.log('Номер не найден, используем следующий:', gameNumber);
+            console.log('⚠️ Номер не найден, присваиваю следующий:', gameNumber);
         } else {
-            console.log('Найден номер стола:', gameNumber);
+            // Если номер найден, проверяем не старый ли он
+            const numFromSite = parseInt(gameNumber);
+            const numFromFile = parseInt(lastGameNumber);
+            
+            if (numFromSite <= numFromFile) {
+                console.log(`⚠️ Найден номер ${gameNumber}, но он уже был. Использую ${numFromFile + 1}`);
+                gameNumber = (numFromFile + 1).toString();
+            } else {
+                console.log('✅ Найден номер стола:', gameNumber);
+            }
         }
         
-        // Сохраняем номер
+        // СОХРАНЯЕМ НОМЕР
         lastGameNumber = gameNumber;
         fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
-        console.log('Номер сохранен в файл');
+        console.log('💾 Номер сохранен в файл');
         
         let attempts = 0;
         let cards = { player: [], banker: [] };
@@ -248,7 +259,7 @@ async function run() {
         }
         
     } catch (e) {
-        console.log('Ошибка:', e.message);
+        console.log('❌ Ошибка:', e.message);
     } finally {
         if (timeout) clearTimeout(timeout);
         if (browser) {
