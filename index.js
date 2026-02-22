@@ -1,6 +1,3 @@
-Понял, с телефона неудобно копировать код частями. Держи полный исправленный код — просто скопируй его целиком и замени всё содержимое index.js:
-
-```javascript
 const { chromium } = require('playwright');
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
@@ -241,4 +238,3 @@ async function run() {
         await run();
     }
 })();
-```
