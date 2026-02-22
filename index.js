@@ -205,9 +205,16 @@ async function run() {
         await page.waitForTimeout(3000);
         
         let gameNumber = await page.evaluate(() => {
-            const el = document.querySelector('.dashboard-game-info__additional-info');
-            return el ? el.textContent.trim() : null;
-        });
+    // Ищем любой элемент, который содержит только цифры (номер стола)
+    const allElements = document.querySelectorAll('*');
+    for (const el of allElements) {
+        const text = el.textContent?.trim();
+        if (text && /^\d{3,4}$/.test(text)) {
+            return text;
+        }
+    }
+    return null;
+});
         
         if (!gameNumber) {
             gameNumber = (parseInt(lastGameNumber) + 1).toString();
