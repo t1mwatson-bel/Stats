@@ -177,7 +177,10 @@ async function run() {
     let timeout;
     
     try {
-        browser = await chromium.launch({ headless: true });
+        browser = await chromium.launch({ 
+    headless: true,
+    args: ['--no-sandbox']
+});
         const page = await browser.newPage();
         
         timeout = setTimeout(async () => {
