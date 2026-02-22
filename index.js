@@ -30,22 +30,21 @@ function determineTurn(playerCards, bankerCards) {
     return null;
 }
 
-// Функция получения номера игры по московскому времени (цикл с 3:00)
+// Функция получения номера игры по московскому времени (всегда, 24/7)
 function getGameNumberByTime() {
     const now = new Date();
     
-    // Переводим в московское время (UTC+3)
+    // Переводим в московское время
     const mskTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Moscow' }));
     
     const currentHours = mskTime.getHours();
     const currentMinutes = mskTime.getMinutes();
-    const currentSeconds = mskTime.getSeconds();
     
-    // Начало цикла: 3:00 МСК
+    // Начало отсчета: 3:00 МСК
     const startHour = 3;
     const startMinute = 0;
     
-    // Считаем минуты с 3:00
+    // Считаем минуты с 3:00 (циклически)
     let minutesSinceStart;
     
     if (currentHours < startHour) {
@@ -58,8 +57,7 @@ function getGameNumberByTime() {
         minutesSinceStart = (currentHours - startHour) * 60 + (currentMinutes - startMinute);
     }
     
-    // Номер игры = минуты с начала + 1
-    // 3:00 = 1, 3:01 = 2, ..., 2:59 = 1440
+    // Номер игры = минуты с начала + 1 (всегда, даже ночью)
     return minutesSinceStart + 1;
 }
 
@@ -250,12 +248,11 @@ async function run() {
         await page.click(`a[href="${activeLink}"]`);
         await page.waitForTimeout(3000);
         
-        // ПОЛУЧАЕМ НОМЕР ИГРЫ ПО МОСКОВСКОМУ ВРЕМЕНИ (ЦИКЛИЧЕСКИЙ)
+        // ПОЛУЧАЕМ НОМЕР ИГРЫ ПО МОСКОВСКОМУ ВРЕМЕНИ (ВСЕГДА)
         const gameNumber = getGameNumberByTime();
-        
         console.log('🎰 Номер игры по времени (МСК):', gameNumber);
         
-        // СОХРАНЯЕМ НОМЕР В ФАЙЛ (для истории)
+        // СОХРАНЯЕМ НОМЕР В ФАЙЛ
         lastGameNumber = gameNumber.toString();
         fs.writeFileSync(LAST_NUMBER_FILE, lastGameNumber);
         console.log('💾 Номер сохранен в файл');
@@ -303,7 +300,7 @@ function getDelayToNextGame() {
 
 // Синхронизированный запуск
 (async () => {
-    console.log('🤖 Бот запущен');
+    console.log('🤖 Бот запущен 24/7');
     console.log('🎯 Номера игр: циклические сброс в 3:00 МСК (1-1440)');
     console.log('🎯 Запуск браузера: каждую минуту в :02 секунд');
     
