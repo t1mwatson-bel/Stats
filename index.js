@@ -29,6 +29,17 @@ function determineTurn(playerCards, bankerCards) {
     return null;
 }
 
+function determineWinner(playerScore, bankerScore, playerCards, bankerCards) {
+    // Проверка на добор (0-5 очков)
+    const playerShouldHit = parseInt(playerScore) <= 5 && playerCards.length === 2;
+    const bankerShouldHit = parseInt(bankerScore) <= 5 && bankerCards.length === 2;
+    
+    // Определение победителя
+    if (playerScore > bankerScore) return 'PLAYER';
+    if (bankerScore > playerScore) return 'BANKER';
+    return 'TIE';
+}
+
 async function sendOrEditTelegram(newMessage) {
     if (!newMessage || newMessage === lastMessageText) return;
     try {
@@ -112,10 +123,23 @@ async function getCards(page) {
 
 async function monitorGame(page, gameNumber) {
     let lastCards = { player: [], banker: [], pScore: '0', bScore: '0' };
+    let hitMessageShown = false; // Флаг для отслеживания показа сообщения о доборе
 
     while (true) {
         const cards = await getCards(page);
 
+        // Проверка на завершение игры через селектор market-grid__game-over-panel
+        const isGameOver = await page.evaluate(() => {
+            return document.querySelector('.market-grid__game-over-panel') !== null;
+        });
+
+        if (isGameOver) {
+            console.log(`🏁 Игра #${gameNumber} завершена, закрываю браузер`);
+            await browser.close();
+            return;
+        }
+
+        // Проверка на завершение через dashboard-game-info__period
         const isFinished = await page.evaluate(() => {
             const el = document.querySelector('.dashboard-game-info__period');
             return el && el.textContent.includes('Игра завершена');
@@ -136,14 +160,27 @@ async function monitorGame(page, gameNumber) {
             }
 
             await sendOrEditTelegram(message);
-            console.log(`✅ Игра #${gameNumber} завершена, закрываю браузер`);
+            console.log(`✅ Игра #${gameNumber} завершена`);
             return;
         }
 
         if (cards.player.length > 0 && cards.banker.length > 0) {
             const turn = determineTurn(cards.player, cards.banker);
             let message;
-            if (turn === 'player') {
+            
+            // Проверка на добор карт (0-5 очков)
+            const playerScore = parseInt(cards.pScore);
+            const bankerScore = parseInt(cards.bScore);
+            
+            if (playerScore <= 5 && cards.player.length === 2 && !hitMessageShown) {
+                message = `⏱№${gameNumber} 👆${cards.pScore}(${formatCards(cards.player)}) -${cards.bScore} (${formatCards(cards.banker)}) #HIT`;
+                hitMessageShown = true;
+                console.log(`👆 Игрок добирает карту (${cards.pScore} очков)`);
+            } else if (bankerScore <= 5 && cards.banker.length === 2 && !hitMessageShown) {
+                message = `⏱№${gameNumber} ${cards.pScore}(${formatCards(cards.player)}) -👆${cards.bScore} (${formatCards(cards.banker)}) #HIT`;
+                hitMessageShown = true;
+                console.log(`👆 Банкир добирает карту (${cards.bScore} очков)`);
+            } else if (turn === 'player') {
                 message = `⏱№${gameNumber} 👉${cards.pScore}(${formatCards(cards.player)}) -${cards.bScore} (${formatCards(cards.banker)})`;
             } else if (turn === 'banker') {
                 message = `⏱№${gameNumber} ${cards.pScore}(${formatCards(cards.player)}) -👉${cards.bScore} (${formatCards(cards.banker)})`;
@@ -160,6 +197,11 @@ async function monitorGame(page, gameNumber) {
             if (cardsChanged) {
                 await sendOrEditTelegram(message);
                 lastCards = { ...cards };
+            }
+
+            // Сброс флага при появлении новых карт
+            if (cards.player.length > lastCards.player.length || cards.banker.length > lastCards.banker.length) {
+                hitMessageShown = false;
             }
         }
 
