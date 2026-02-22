@@ -256,7 +256,7 @@ function getDelayToNextGame() {
     const now = new Date();
     const seconds = now.getSeconds();
     const milliseconds = now.getMilliseconds();
-    const targetSeconds = 5;
+    const targetSeconds = 2;
     
     let delaySeconds;
     if (seconds < targetSeconds) {
