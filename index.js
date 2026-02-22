@@ -131,7 +131,8 @@ async function getCards(page) {
 
 async function monitorGame(page, gameNumber) {
     let lastCards = { player: [], banker: [], pScore: '0', bScore: '0' };
-    let gameOverCount = 0; // Счетчик для проверки ложных срабатываний
+    let gameOverCount = 0;
+    let lastHitMessage = ''; // Для предотвращения спама
 
     while (true) {
         const cards = await getCards(page);
@@ -141,7 +142,12 @@ async function monitorGame(page, gameNumber) {
             const panel = document.querySelector('.market-grid__game-over-panel');
             if (!panel) return false;
             
-            // Дополнительно проверяем, есть ли текст "Игра завершена"
+            // Проверяем видимость
+            const style = window.getComputedStyle(panel);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+                return false;
+            }
+            
             const caption = panel.querySelector('.ui-caption');
             return caption && caption.textContent.includes('Игра завершена');
         });
@@ -150,15 +156,37 @@ async function monitorGame(page, gameNumber) {
             gameOverCount++;
             console.log(`⚠️ Обнаружен game-over панель (попытка ${gameOverCount}/3)`);
             
-            // Проверяем 3 раза с интервалом, чтобы убедиться, что это не ложное срабатывание
             if (gameOverCount >= 3) {
-                console.log(`🏁 Игра #${gameNumber} действительно завершена, закрываю браузер`);
-                return true; // Сигнал о завершении
+                console.log(`🏁 Игра #${gameNumber} завершена, жду 10 секунд перед закрытием...`);
+                
+                // Ждем 10 секунд
+                await page.waitForTimeout(10000);
+                
+                // Проверяем еще раз
+                const finalCheck = await page.evaluate(() => {
+                    const panel = document.querySelector('.market-grid__game-over-panel');
+                    if (!panel) return false;
+                    const style = window.getComputedStyle(panel);
+                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+                        return false;
+                    }
+                    const caption = panel.querySelector('.ui-caption');
+                    return caption && caption.textContent.includes('Игра завершена');
+                });
+                
+                if (finalCheck) {
+                    console.log(`✅ Подтверждено, закрываю браузер`);
+                    return true;
+                } else {
+                    console.log(`⚠️ Панель исчезла, продолжаем игру`);
+                    gameOverCount = 0;
+                    continue;
+                }
             }
             await page.waitForTimeout(1000);
             continue;
         } else {
-            gameOverCount = 0; // Сбрасываем счетчик, если панель исчезла
+            gameOverCount = 0;
         }
 
         // Проверка на завершение через dashboard-game-info__period
@@ -187,7 +215,7 @@ async function monitorGame(page, gameNumber) {
 
             await sendOrEditTelegram(message);
             console.log(`✅ Игра #${gameNumber} завершена`);
-            return true; // Сигнал о завершении
+            return true;
         }
 
         if (cards.player.length > 0 && cards.banker.length > 0) {
@@ -195,38 +223,49 @@ async function monitorGame(page, gameNumber) {
             const playerScore = parseInt(cards.pScore);
             const bankerScore = parseInt(cards.bScore);
             
-            // ПРОВЕРКА НА НАТУРАЛЬНУЮ ПОБЕДУ (7-9 с двух карт)
+            // Проверка на натуральную победу (7-9 с двух карт)
             const playerNatural = isNaturalWin(playerScore, cards.player.length);
             const bankerNatural = isNaturalWin(bankerScore, cards.banker.length);
             
-            // Если у кого-то натуралка - не показываем добор, ждем завершения
+            // Если у кого-то натуралка - не показываем добор
             if (playerNatural || bankerNatural) {
                 message = `⏱№${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)})`;
             } else {
-                // Определяем, кто сейчас добирает (только если нет натуралки)
+                // Определяем, кто сейчас добирает
                 const playerHitting = playerScore <= 5 && cards.player.length === 2;
                 const bankerHitting = bankerScore <= 5 && cards.banker.length === 2 && cards.player.length >= 2;
                 
                 if (playerHitting && cards.player.length === 2) {
-                    message = `⏱№${gameNumber} 👉${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)})`;
-                    console.log(`👆 Игрок добирает карту (${cards.pScore} очков)`);
+                    const hitMsg = `⏱№${gameNumber} 👉${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)})`;
+                    // Проверяем, чтобы не спамить одинаковым сообщением
+                    if (hitMsg !== lastHitMessage) {
+                        message = hitMsg;
+                        console.log(`👆 Игрок добирает карту (${cards.pScore} очков)`);
+                        lastHitMessage = hitMsg;
+                    }
                 } else if (bankerHitting && cards.banker.length === 2) {
-                    message = `⏱№${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) -👉${cards.bScore} (${formatCards(cards.banker)})`;
-                    console.log(`👆 Банкир добирает карту (${cards.bScore} очков)`);
+                    const hitMsg = `⏱№${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) -👉${cards.bScore} (${formatCards(cards.banker)})`;
+                    if (hitMsg !== lastHitMessage) {
+                        message = hitMsg;
+                        console.log(`👆 Банкир добирает карту (${cards.bScore} очков)`);
+                        lastHitMessage = hitMsg;
+                    }
                 } else {
                     message = `⏱№${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)})`;
                 }
             }
 
-            const cardsChanged = 
-                JSON.stringify(cards.player) !== JSON.stringify(lastCards.player) ||
-                JSON.stringify(cards.banker) !== JSON.stringify(lastCards.banker) ||
-                cards.pScore !== lastCards.pScore ||
-                cards.bScore !== lastCards.bScore;
+            if (message) {
+                const cardsChanged = 
+                    JSON.stringify(cards.player) !== JSON.stringify(lastCards.player) ||
+                    JSON.stringify(cards.banker) !== JSON.stringify(lastCards.banker) ||
+                    cards.pScore !== lastCards.pScore ||
+                    cards.bScore !== lastCards.bScore;
 
-            if (cardsChanged) {
-                await sendOrEditTelegram(message);
-                lastCards = { ...cards };
+                if (cardsChanged) {
+                    await sendOrEditTelegram(message);
+                    lastCards = { ...cards };
+                }
             }
         }
 
@@ -254,7 +293,7 @@ async function run() {
         await page.click(`a[href="${liveLink}"]`);
         await page.waitForTimeout(3000);
 
-        // ПОЛУЧАЕМ НОМЕР СТОЛА
+        // Получаем номер стола
         let gameNumber = await page.evaluate(() => {
             const infoEl = document.querySelector('.dashboard-game-info__additional-info');
             if (infoEl && infoEl.textContent.trim()) {
