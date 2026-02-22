@@ -1,3 +1,6 @@
+Понял, с телефона неудобно копировать код частями. Держи полный исправленный код — просто скопируй его целиком и замени всё содержимое index.js:
+
+```javascript
 const { chromium } = require('playwright');
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
@@ -47,16 +50,10 @@ async function sendOrEditTelegram(newMessage) {
     }
 }
 
-// Поиск САМОГО НИЖНЕГО стола с таймером
+// Поиск первого стола с таймером
 async function findFirstLiveGame(page) {
-    await page.waitForSelector('.dashboard-game-info__time', { timeout: 10000 }).catch(() => null);
-    
     const games = await page.$$('.dashboard-game');
-    
-    // Идём с конца — самый свежий стол будет последним
-    for (let i = games.length - 1; i >= 0; i--) {
-        const game = games[i];
-        
+    for (const game of games) {
         const hasTimer = await game.$('.dashboard-game-info__time') !== null;
         if (!hasTimer) continue;
 
@@ -70,7 +67,6 @@ async function findFirstLiveGame(page) {
             if (link) return await link.getAttribute('href');
         }
     }
-    
     return null;
 }
 
@@ -179,7 +175,7 @@ async function run() {
     const page = await browser.newPage();
 
     await page.goto(URL);
-    console.log('🔍 Ищу первый стол с таймером (с конца)...');
+    console.log('🔍 Ищу первый стол с таймером...');
 
     let liveLink = null;
     while (!liveLink) {
@@ -193,18 +189,29 @@ async function run() {
     await page.click(`a[href="${liveLink}"]`);
     await page.waitForTimeout(3000);
 
-    // Берём номер игры из URL
+    // ПОЛУЧАЕМ НОМЕР СТОЛА ПРАВИЛЬНО
     let gameNumber = await page.evaluate(() => {
-        const url = window.location.href;
-        const match = url.match(/\/(\d+)-player-banker/);
-        return match ? match[1] : null;
+        // 1. Пробуем дополнительную информацию (номер стола)
+        const infoEl = document.querySelector('.dashboard-game-info__additional-info');
+        if (infoEl && infoEl.textContent.trim()) {
+            return infoEl.textContent.trim();
+        }
+        
+        // 2. Пробуем время или период
+        const timeEl = document.querySelector('.dashboard-game-info__time, .dashboard-game-info__period');
+        if (timeEl && timeEl.textContent.trim()) {
+            const match = timeEl.textContent.trim().match(/\d+$/);
+            if (match) return match[0];
+        }
+        
+        return null;
     });
 
     if (!gameNumber) {
         gameNumber = (parseInt(lastGameNumber) + 1).toString();
-        console.log('⚠️ Номер не найден в URL, присваиваю:', gameNumber);
+        console.log('⚠️ Номер не найден, присваиваю:', gameNumber);
     } else {
-        console.log('🎰 Номер игры из URL:', gameNumber);
+        console.log('🎰 Номер стола:', gameNumber);
     }
 
     lastGameNumber = gameNumber;
@@ -234,3 +241,4 @@ async function run() {
         await run();
     }
 })();
+```
