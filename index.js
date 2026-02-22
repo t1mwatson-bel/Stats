@@ -11,9 +11,9 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 
 let lastMessageId = null;
 let lastMessageText = '';
-let lastGameNumber = '0';
-let browserCounter = 0;
 
+// Загружаем последний номер из файла
+let lastGameNumber = '0';
 if (fs.existsSync(LAST_NUMBER_FILE)) {
     lastGameNumber = fs.readFileSync(LAST_NUMBER_FILE, 'utf8');
     console.log('Загружен последний номер:', lastGameNumber);
@@ -23,80 +23,50 @@ function formatCards(cards) {
     return cards.join('');
 }
 
-function determineWinner(playerScore, bankerScore) {
-    if (playerScore > bankerScore) return 'П1';
-    if (bankerScore > playerScore) return 'П2';
-    return 'X';
-}
-
-function getCardCountColor(playerCount, bankerCount) {
-    return `#C${playerCount}_${bankerCount}`;
-}
-
-function isNaturalWin(score, cardCount) {
-    return cardCount === 2 && (score >= 7 && score <= 9);
-}
-
-function getNaturalFlag(playerScore, playerCount, bankerScore, bankerCount) {
-    if (playerCount === 2 && bankerCount === 2) {
-        if ((playerScore >= 7 && playerScore <= 9) || (bankerScore >= 7 && bankerScore <= 9)) {
-            return ' #R🔵';
-        }
-    }
-    return '';
+function determineTurn(playerCards, bankerCards) {
+    if (playerCards.length === 2 && bankerCards.length === 2) return 'player';
+    if (playerCards.length === 3 && bankerCards.length === 2) return 'banker';
+    if (playerCards.length === 2 && bankerCards.length === 3) return 'player';
+    return null;
 }
 
 async function sendOrEditTelegram(newMessage) {
     if (!newMessage || newMessage === lastMessageText) return;
     
-    for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-            if (lastMessageId) {
-                await bot.editMessageText(newMessage, {
-                    chat_id: CHAT,
-                    message_id: lastMessageId
-                });
-            } else {
-                const msg = await bot.sendMessage(CHAT, newMessage);
-                lastMessageId = msg.message_id;
-            }
-            lastMessageText = newMessage;
-            return;
-        } catch (e) {
-            console.log(`❌ TG error (попытка ${attempt}/3):`, e.message);
-            
-            if (attempt === 3) {
-                try {
-                    const msg = await bot.sendMessage(CHAT, newMessage);
-                    lastMessageId = msg.message_id;
-                    lastMessageText = newMessage;
-                    console.log('✅ Отправлено новое сообщение');
-                } catch (sendError) {
-                    console.log('❌ Критическая ошибка TG:', sendError.message);
-                }
-            } else {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
+    try {
+        if (lastMessageId) {
+            await bot.editMessageText(newMessage, {
+                chat_id: CHAT,
+                message_id: lastMessageId
+            });
+        } else {
+            const msg = await bot.sendMessage(CHAT, newMessage);
+            lastMessageId = msg.message_id;
         }
+        lastMessageText = newMessage;
+    } catch (e) {
+        console.log('TG error:', e.message);
     }
 }
 
-async function findFirstLiveGame(page) {
-    const games = await page.$$('.dashboard-game');
+async function checkTables(page) {
+    const games = await page.$$('li.dashboard-champ__game');
+    
     for (const game of games) {
         const hasTimer = await game.$('.dashboard-game-info__time') !== null;
-        if (!hasTimer) continue;
-
         const isFinished = await game.evaluate(el => {
             const period = el.querySelector('.dashboard-game-info__period');
-            return period?.textContent.includes('Игра завершена') ?? false;
+            return period ? period.textContent.includes('Игра завершена') : false;
         });
-
-        if (!isFinished) {
+        
+        if (hasTimer && !isFinished) {
             const link = await game.$('a[href*="/ru/live/baccarat/"]');
-            if (link) return await link.getAttribute('href');
+            if (link) {
+                return await link.getAttribute('href');
+            }
         }
     }
+    
     return null;
 }
 
@@ -143,208 +113,118 @@ async function getCards(page) {
     return { player, banker, pScore, bScore };
 }
 
-async function monitorGame(page, gameNumber, browserId) {
+async function monitorGame(page, gameNumber) {
     let lastCards = { player: [], banker: [], pScore: '0', bScore: '0' };
-    let gameOverCount = 0;
-    let lastHitMessage = '';
-    let lastPlayerCardCount = 0;
-    let lastBankerCardCount = 0;
-
+    
     while (true) {
         const cards = await getCards(page);
-
+        
+        // ИСПРАВЛЕНО: используем твой селектор
         const isGameOver = await page.evaluate(() => {
             const panel = document.querySelector('.market-grid__game-over-panel');
             if (!panel) return false;
-            
-            const style = window.getComputedStyle(panel);
-            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
-                return false;
-            }
-            
             const caption = panel.querySelector('.ui-caption');
             return caption && caption.textContent.includes('Игра завершена');
         });
-
+        
         if (isGameOver) {
-            gameOverCount++;
-            console.log(`[Браузер ${browserId}] ⚠️ Game-over панель (${gameOverCount}/3)`);
+            // ДОБАВЛЕНО: ждем 10 секунд перед финальным сообщением
+            console.log('Игра завершена, жду 10 секунд...');
+            await page.waitForTimeout(10000);
             
-            if (gameOverCount >= 3) {
-                console.log(`[Браузер ${browserId}] 🏁 Игра #${gameNumber} завершена, жду 10 сек...`);
-                await page.waitForTimeout(10000);
-                
-                const finalCheck = await page.evaluate(() => {
-                    const panel = document.querySelector('.market-grid__game-over-panel');
-                    if (!panel) return false;
-                    const style = window.getComputedStyle(panel);
-                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
-                        return false;
-                    }
-                    const caption = panel.querySelector('.ui-caption');
-                    return caption && caption.textContent.includes('Игра завершена');
-                });
-                
-                if (finalCheck) {
-                    console.log(`[Браузер ${browserId}] ✅ Подтверждено`);
-                    return true;
-                } else {
-                    console.log(`[Браузер ${browserId}] ⚠️ Панель исчезла`);
-                    gameOverCount = 0;
-                    continue;
-                }
-            }
-            await page.waitForTimeout(1000);
-            continue;
-        } else {
-            gameOverCount = 0;
-        }
-
-        const isFinished = await page.evaluate(() => {
-            const el = document.querySelector('.dashboard-game-info__period');
-            return el && el.textContent.includes('Игра завершена');
-        });
-
-        if (isFinished) {
             const total = parseInt(cards.pScore) + parseInt(cards.bScore);
-            const winner = determineWinner(parseInt(cards.pScore), parseInt(cards.bScore));
-            const cardCountColor = getCardCountColor(cards.player.length, cards.banker.length);
-            const naturalFlag = getNaturalFlag(
-                parseInt(cards.pScore), cards.player.length,
-                parseInt(cards.bScore), cards.banker.length
-            );
+            const winner = cards.pScore > cards.bScore ? 'П1' : (cards.bScore > cards.pScore ? 'П2' : 'X');
+            const noDrawFlag = cards.player.length === 2 && cards.banker.length === 2 ? '#R ' : '';
             
             let message;
-            if (winner === 'П1') {
-                message = `#N${gameNumber} ✅${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)})${naturalFlag} #${winner} #T${total} ${cardCountColor}`;
-            } else if (winner === 'П2') {
-                message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) - ✅${cards.bScore} (${formatCards(cards.banker)})${naturalFlag} #${winner} #T${total} ${cardCountColor}`;
+            if (cards.pScore > cards.bScore) {
+                message = `#N${gameNumber} ✅${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
+            } else if (cards.bScore > cards.pScore) {
+                message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) - ✅${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
             } else {
-                message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) 🔰 ${cards.bScore} (${formatCards(cards.banker)})${naturalFlag} #${winner} #T${total} ${cardCountColor}`;
+                message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) 🔰 ${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
             }
-
+            
             await sendOrEditTelegram(message);
-            console.log(`[Браузер ${browserId}] ✅ Игра #${gameNumber} завершена`);
-            return true;
+            break;
         }
-
+        
         if (cards.player.length > 0 && cards.banker.length > 0) {
+            const turn = determineTurn(cards.player, cards.banker);
+            
             let message;
-            const playerScore = parseInt(cards.pScore);
-            const bankerScore = parseInt(cards.bScore);
-            
-            const playerNatural = isNaturalWin(playerScore, cards.player.length);
-            const bankerNatural = isNaturalWin(bankerScore, cards.banker.length);
-            
-            if (playerNatural || bankerNatural) {
-                message = `⏱№${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)})`;
+            if (turn === 'player') {
+                message = `⏱№${gameNumber} 👉${cards.pScore}(${formatCards(cards.player)}) -${cards.bScore} (${formatCards(cards.banker)})`;
+            } else if (turn === 'banker') {
+                message = `⏱№${gameNumber} ${cards.pScore}(${formatCards(cards.player)}) -👉${cards.bScore} (${formatCards(cards.banker)})`;
             } else {
-                if (cards.player.length > lastPlayerCardCount) {
-                    const hitMsg = `⏱№${gameNumber} 👉${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)})`;
-                    if (hitMsg !== lastHitMessage) {
-                        message = hitMsg;
-                        console.log(`[Браузер ${browserId}] 🃏 Игрок добрал: ${cards.player[cards.player.length-1]}`);
-                        lastHitMessage = hitMsg;
-                    }
-                }
-                else if (cards.banker.length > lastBankerCardCount) {
-                    const hitMsg = `⏱№${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) -👉${cards.bScore} (${formatCards(cards.banker)})`;
-                    if (hitMsg !== lastHitMessage) {
-                        message = hitMsg;
-                        console.log(`[Браузер ${browserId}] 🃏 Банкир добрал: ${cards.banker[cards.banker.length-1]}`);
-                        lastHitMessage = hitMsg;
-                    }
-                }
-                else {
-                    message = `⏱№${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)})`;
-                }
+                message = `⏱№${gameNumber} ${cards.pScore}(${formatCards(cards.player)}) -${cards.bScore} (${formatCards(cards.banker)})`;
             }
-
+            
             const cardsChanged = 
                 JSON.stringify(cards.player) !== JSON.stringify(lastCards.player) ||
                 JSON.stringify(cards.banker) !== JSON.stringify(lastCards.banker) ||
                 cards.pScore !== lastCards.pScore ||
                 cards.bScore !== lastCards.bScore;
-
-            if (cardsChanged && message) {
+            
+            if (cardsChanged) {
                 await sendOrEditTelegram(message);
                 lastCards = { ...cards };
             }
         }
-
-        lastPlayerCardCount = cards.player.length;
-        lastBankerCardCount = cards.banker.length;
-
+        
         await page.waitForTimeout(2000);
     }
 }
 
-async function runBrowser() {
-    const browserId = ++browserCounter;
-    const startTime = Date.now();
-    const closeTime = new Date(startTime + 120000); // +2 минуты
+async function run() {
+    let browser;
+    let timeout;
     
-    console.log(`\n🟢 [Браузер ${browserId}] открылся в ${new Date(startTime).toLocaleTimeString()}`);
-    console.log(`   [Браузер ${browserId}] закроется в ${closeTime.toLocaleTimeString()}`);
-    
-    const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-
-    // Принудительное закрытие через 2 минуты
-    const forceCloseTimeout = setTimeout(async () => {
-        console.log(`⏱ [Браузер ${browserId}] 2 минуты истекли, закрываю`);
-        await browser.close().catch(() => {});
-    }, 120000);
-
     try {
+        browser = await chromium.launch({ headless: false });
+        const page = await browser.newPage();
+        
+        timeout = setTimeout(async () => {
+            console.log('⏱ 2 минуты прошло, закрываем браузер...');
+            if (browser) await browser.close();
+        }, 120000);
+        
         await page.goto(URL);
+        console.log('Проверяем все столы...');
         
-        // Поиск стола (максимум 30 сек)
-        let liveLink = null;
-        const searchStart = Date.now();
-        
-        while (!liveLink && (Date.now() - searchStart) < 30000) {
-            liveLink = await findFirstLiveGame(page);
-            if (!liveLink) {
-                await page.waitForTimeout(1000);
+        let activeLink = null;
+        while (!activeLink) {
+            activeLink = await checkTables(page);
+            if (!activeLink) {
+                console.log('Активных столов нет, ждем 5 секунд...');
+                await page.waitForTimeout(5000);
             }
         }
         
-        if (!liveLink) {
-            console.log(`⚠️ [Браузер ${browserId}] не нашел стол за 30 сек`);
-            return;
-        }
-
-        console.log(`🎯 [Браузер ${browserId}] заходит в стол:`, liveLink);
-        await page.click(`a[href="${liveLink}"]`);
+        console.log('Нашли активный стол:', activeLink);
+        
+        await page.click(`a[href="${activeLink}"]`);
         await page.waitForTimeout(3000);
-
-        // Получаем номер игры
+        
+        // Получаем номер стола
         let gameNumber = await page.evaluate(() => {
-            const infoEl = document.querySelector('.dashboard-game-info__additional-info');
-            if (infoEl && infoEl.textContent.trim()) {
-                return infoEl.textContent.trim();
-            }
-            const timeEl = document.querySelector('.dashboard-game-info__time, .dashboard-game-info__period');
-            if (timeEl && timeEl.textContent.trim()) {
-                const match = timeEl.textContent.trim().match(/\d+$/);
-                if (match) return match[0];
-            }
-            return null;
+            const el = document.querySelector('.dashboard-game-info__additional-info');
+            return el ? el.textContent.trim() : null;
         });
-
+        
         if (!gameNumber) {
             gameNumber = (parseInt(lastGameNumber) + 1).toString();
-            console.log(`⚠️ [Браузер ${browserId}] номер не найден, присваиваю:`, gameNumber);
+            console.log('Номер не найден, используем следующий:', gameNumber);
         } else {
-            console.log(`🎰 [Браузер ${browserId}] номер стола:`, gameNumber);
+            console.log('Найден номер стола:', gameNumber);
         }
-
-        // Сохраняем номер глобально
+        
+        // Сохраняем номер
         lastGameNumber = gameNumber;
         fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
-
-        // Ждем появления карт
+        console.log('Номер сохранен в файл');
+        
         let attempts = 0;
         let cards = { player: [], banker: [] };
         while (attempts < 12 && (cards.player.length === 0 || cards.banker.length === 0)) {
@@ -352,28 +232,26 @@ async function runBrowser() {
             cards = await getCards(page);
             attempts++;
         }
-
+        
         if (cards.player.length > 0 && cards.banker.length > 0) {
-            await monitorGame(page, gameNumber, browserId);
+            await monitorGame(page, gameNumber);
         }
         
-    } catch (error) {
-        console.log(`❌ [Браузер ${browserId}] ошибка:`, error.message);
+    } catch (e) {
+        console.log('Ошибка:', e.message);
     } finally {
-        clearTimeout(forceCloseTimeout);
-        await browser.close();
-        console.log(`🔴 [Браузер ${browserId}] закрылся в ${new Date().toLocaleTimeString()}\n`);
+        if (timeout) clearTimeout(timeout);
+        if (browser) {
+            await browser.close();
+            lastMessageId = null;
+            lastMessageText = '';
+        }
     }
 }
 
-// ЗАПУСК: Каждые 45 секунд новый браузер
-(async () => {
-    console.log('🤖 Бот запущен');
-    console.log('⏱ Каждые 45 секунд - новый браузер');
-    console.log('⏱ Каждый браузер живет 2 минуты\n');
-    
-    while (true) {
-        runBrowser(); // Запускаем не дожидаясь завершения
-        await new Promise(resolve => setTimeout(resolve, 45000)); // Ждем 45 сек
-    }
-})();
+// ИЗМЕНЕНО: теперь 45 секунд
+setInterval(run, 45000);
+console.log('✅ Бот запущен. Последний номер:', lastGameNumber);
+console.log('⏱ Интервал: 45 секунд');
+console.log('⏱ Таймаут браузера: 2 минуты');
+console.log('🔍 Селектор: .market-grid__game-over-panel');
