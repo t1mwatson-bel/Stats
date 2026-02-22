@@ -11,9 +11,8 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 
 let lastMessageId = null;
 let lastMessageText = '';
-
-// Загружаем последний номер из файла
 let lastGameNumber = '0';
+
 if (fs.existsSync(LAST_NUMBER_FILE)) {
     lastGameNumber = fs.readFileSync(LAST_NUMBER_FILE, 'utf8');
     console.log('Загружен последний номер:', lastGameNumber);
@@ -32,7 +31,6 @@ function determineTurn(playerCards, bankerCards) {
 
 async function sendOrEditTelegram(newMessage) {
     if (!newMessage || newMessage === lastMessageText) return;
-    
     try {
         if (lastMessageId) {
             await bot.editMessageText(newMessage, {
@@ -49,16 +47,17 @@ async function sendOrEditTelegram(newMessage) {
     }
 }
 
-async function checkTables(page) {
-    const games = await page.$$('li.dashboard-champ__game');
-    
+// Функция поиска стола с таймером (живая игра)
+async function findLiveGame(page) {
+    const games = await page.$$('.dashboard-game');
+
     for (const game of games) {
         const hasTimer = await game.$('.dashboard-game-info__time') !== null;
         const isFinished = await game.evaluate(el => {
             const period = el.querySelector('.dashboard-game-info__period');
-            return period ? period.textContent.includes('Игра завершена') : false;
+            return period?.textContent.includes('Игра завершена') ?? false;
         });
-        
+
         if (hasTimer && !isFinished) {
             const link = await game.$('a[href*="/ru/live/baccarat/"]');
             if (link) {
@@ -66,7 +65,6 @@ async function checkTables(page) {
             }
         }
     }
-    
     return null;
 }
 
@@ -115,20 +113,20 @@ async function getCards(page) {
 
 async function monitorGame(page, gameNumber) {
     let lastCards = { player: [], banker: [], pScore: '0', bScore: '0' };
-    
+
     while (true) {
         const cards = await getCards(page);
-        
+
         const isFinished = await page.evaluate(() => {
-            const el = document.querySelector('.game-over-panel .ui-caption');
-            return el ? el.textContent.includes('Игра завершена') : false;
+            const el = document.querySelector('.dashboard-game-info__period');
+            return el && el.textContent.includes('Игра завершена');
         });
-        
+
         if (isFinished) {
             const total = parseInt(cards.pScore) + parseInt(cards.bScore);
             const winner = cards.pScore > cards.bScore ? 'П1' : (cards.bScore > cards.pScore ? 'П2' : 'X');
             const noDrawFlag = cards.player.length === 2 && cards.banker.length === 2 ? '#R ' : '';
-            
+
             let message;
             if (cards.pScore > cards.bScore) {
                 message = `#N${gameNumber} ✅${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
@@ -137,14 +135,15 @@ async function monitorGame(page, gameNumber) {
             } else {
                 message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) 🔰 ${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
             }
-            
+
             await sendOrEditTelegram(message);
-            break;
+            console.log(`Игра #${gameNumber} завершена`);
+            return; // Выход из monitorGame
         }
-        
+
         if (cards.player.length > 0 && cards.banker.length > 0) {
             const turn = determineTurn(cards.player, cards.banker);
-            
+
             let message;
             if (turn === 'player') {
                 message = `⏱№${gameNumber} 👉${cards.pScore}(${formatCards(cards.player)}) -${cards.bScore} (${formatCards(cards.banker)})`;
@@ -153,102 +152,78 @@ async function monitorGame(page, gameNumber) {
             } else {
                 message = `⏱№${gameNumber} ${cards.pScore}(${formatCards(cards.player)}) -${cards.bScore} (${formatCards(cards.banker)})`;
             }
-            
+
             const cardsChanged = 
                 JSON.stringify(cards.player) !== JSON.stringify(lastCards.player) ||
                 JSON.stringify(cards.banker) !== JSON.stringify(lastCards.banker) ||
                 cards.pScore !== lastCards.pScore ||
                 cards.bScore !== lastCards.bScore;
-            
+
             if (cardsChanged) {
                 await sendOrEditTelegram(message);
                 lastCards = { ...cards };
             }
         }
-        
+
         await page.waitForTimeout(2000);
     }
 }
 
 async function run() {
-    let browser;
-    let timeout;
-    
-    try {
-        // Запуск браузера для сервера
-        browser = await chromium.launch({ 
-            headless: true,
-            args: ['--no-sandbox']
-        });
-        
-        const page = await browser.newPage();
-        
-        // ТАЙМЕР НА 10 МИНУТ (600000 мс)
-        timeout = setTimeout(async () => {
-            console.log('⏱ 10 минут прошло, закрываем браузер...');
-            if (browser) await browser.close();
-        }, 600000);
-        
-        await page.goto(URL);
-        console.log('Проверяем все столы...');
-        
-        let activeLink = null;
-        while (!activeLink) {
-            activeLink = await checkTables(page);
-            if (!activeLink) {
-                console.log('Активных столов нет, ждем 5 секунд...');
-                await page.waitForTimeout(5000);
-            }
-        }
-        
-        console.log('Нашли активный стол:', activeLink);
-        
-        await page.click(`a[href="${activeLink}"]`);
-        await page.waitForTimeout(3000);
-        
-        // ПОЛУЧАЕМ НОМЕР СТОЛА
-        let gameNumber = await page.evaluate(() => {
-            const el = document.querySelector('.dashboard-game-info__additional-info');
-            return el ? el.textContent.trim() : null;
-        });
-        
-        if (!gameNumber) {
-            // Если номера нет, увеличиваем последний на 1
-            gameNumber = (parseInt(lastGameNumber) + 1).toString();
-            console.log('Номер не найден, используем следующий:', gameNumber);
-        } else {
-            // Если номер есть, используем его
-            console.log('Найден номер стола:', gameNumber);
-        }
-        
-        // СОХРАНЯЕМ НОМЕР В ФАЙЛ
-        lastGameNumber = gameNumber;
-        fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
-        console.log('Сохранен номер в файл:', gameNumber);
-        
-        let attempts = 0;
-        let cards = { player: [], banker: [] };
-        while (attempts < 12 && (cards.player.length === 0 || cards.banker.length === 0)) {
-            await page.waitForTimeout(5000);
-            cards = await getCards(page);
-            attempts++;
-        }
-        
-        if (cards.player.length > 0 && cards.banker.length > 0) {
-            await monitorGame(page, gameNumber);
-        }
-        
-    } catch (e) {
-        console.log('Ошибка:', e.message);
-    } finally {
-        if (timeout) clearTimeout(timeout);
-        if (browser) {
-            await browser.close();
-            lastMessageId = null;
-            lastMessageText = '';
+    const browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+
+    await page.goto(URL);
+    console.log('Ищем живой стол с таймером...');
+
+    let liveLink = null;
+    while (!liveLink) {
+        liveLink = await findLiveGame(page);
+        if (!liveLink) {
+            await page.waitForTimeout(1000); // быстрая прокрутка
         }
     }
+
+    console.log('Найден живой стол:', liveLink);
+    await page.click(`a[href="${liveLink}"]`);
+    await page.waitForTimeout(3000);
+
+    let gameNumber = await page.evaluate(() => {
+        const el = document.querySelector('.dashboard-game-info__additional-info');
+        return el ? el.textContent.trim() : null;
+    });
+
+    if (!gameNumber) {
+        gameNumber = (parseInt(lastGameNumber) + 1).toString();
+        console.log('Номер не найден, используем следующий:', gameNumber);
+    } else {
+        console.log('Найден номер стола:', gameNumber);
+    }
+
+    lastGameNumber = gameNumber;
+    fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
+
+    let attempts = 0;
+    let cards = { player: [], banker: [] };
+    while (attempts < 12 && (cards.player.length === 0 || cards.banker.length === 0)) {
+        await page.waitForTimeout(5000);
+        cards = await getCards(page);
+        attempts++;
+    }
+
+    if (cards.player.length > 0 && cards.banker.length > 0) {
+        await monitorGame(page, gameNumber);
+    }
+
+    await browser.close();
+    lastMessageId = null;
+    lastMessageText = '';
 }
 
-setInterval(run, 60000);
-console.log('Бот запущен. Последний номер:', lastGameNumber);
+// Бесконечный цикл
+(async () => {
+    console.log('Бот запущен. Последний номер:', lastGameNumber);
+    while (true) {
+        await run();
+    }
+})();
