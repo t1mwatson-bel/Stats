@@ -12,7 +12,7 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 let lastMessageId = null;
 let lastMessageText = '';
 
-// Загружаем последний номер из файла
+// Загружаем последний номер из файла (на всякий случай)
 let lastGameNumber = '0';
 if (fs.existsSync(LAST_NUMBER_FILE)) {
     lastGameNumber = fs.readFileSync(LAST_NUMBER_FILE, 'utf8');
@@ -28,6 +28,33 @@ function determineTurn(playerCards, bankerCards) {
     if (playerCards.length === 3 && bankerCards.length === 2) return 'banker';
     if (playerCards.length === 2 && bankerCards.length === 3) return 'player';
     return null;
+}
+
+// НОВАЯ ФУНКЦИЯ: получаем номер игры по московскому времени
+function getGameNumberByTime() {
+    const now = new Date();
+    
+    // Переводим в московское время (UTC+3)
+    const mskTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Moscow' }));
+    
+    const currentHours = mskTime.getHours();
+    const currentMinutes = mskTime.getMinutes();
+    
+    // Начало отсчета: 3:00 МСК
+    const startHour = 3;
+    const startMinute = 0;
+    
+    // Если сейчас меньше 3:00, значит игры еще не начались
+    if (currentHours < startHour || (currentHours === startHour && currentMinutes < startMinute)) {
+        return null; // игры еще нет
+    }
+    
+    // Считаем сколько минут прошло с 3:00
+    const minutesSinceStart = (currentHours - startHour) * 60 + (currentMinutes - startMinute);
+    
+    // Номер игры = минуты с начала + 1
+    // Например: 3:00 = 1, 3:01 = 2, 3:02 = 3...
+    return minutesSinceStart + 1;
 }
 
 async function sendOrEditTelegram(newMessage) {
@@ -217,31 +244,18 @@ async function run() {
         await page.click(`a[href="${activeLink}"]`);
         await page.waitForTimeout(3000);
         
-        // ПОЛУЧАЕМ НОМЕР СТОЛА С ПРОВЕРКОЙ
-        let gameNumber = await page.evaluate(() => {
-            const el = document.querySelector('.dashboard-game-info__additional-info');
-            return el ? el.textContent.trim() : null;
-        });
+        // ПОЛУЧАЕМ НОМЕР ИГРЫ ПО МОСКОВСКОМУ ВРЕМЕНИ
+        let gameNumber = getGameNumberByTime();
         
-        // ИСПРАВЛЕНИЕ НУМЕРАЦИИ
         if (!gameNumber) {
-            // Если номера нет на сайте - берем следующий из файла
-            gameNumber = (parseInt(lastGameNumber) + 1).toString();
-            console.log('⚠️ Номер не найден, присваиваю следующий:', gameNumber);
-        } else {
-            // Если номер найден, проверяем не старый ли он
-            const numFromSite = parseInt(gameNumber);
-            const numFromFile = parseInt(lastGameNumber);
-            
-            if (numFromSite <= numFromFile) {
-                console.log(`⚠️ Найден номер ${gameNumber}, но он уже был. Использую ${numFromFile + 1}`);
-                gameNumber = (numFromFile + 1).toString();
-            } else {
-                console.log('✅ Найден номер стола:', gameNumber);
-            }
+            console.log('⏰ До начала игр еще время (старт в 3:00 МСК)');
+            return; // выходим, игры нет
         }
         
-        // СОХРАНЯЕМ НОМЕР
+        console.log('🎰 Номер игры по времени (МСК):', gameNumber);
+        gameNumber = gameNumber.toString();
+        
+        // СОХРАНЯЕМ НОМЕР В ФАЙЛ (на всякий случай)
         lastGameNumber = gameNumber;
         fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
         console.log('💾 Номер сохранен в файл');
@@ -289,8 +303,9 @@ function getDelayToNextGame() {
 
 // Синхронизированный запуск
 (async () => {
-    console.log('🤖 Бот запущен. Последний номер:', lastGameNumber);
-    console.log('🎯 Целевое время запуска: каждую минуту в :02 секунд');
+    console.log('🤖 Бот запущен');
+    console.log('🎯 Номера игр синхронизированы с московским временем (старт в 3:00)');
+    console.log('🎯 Запуск браузера: каждую минуту в :02 секунд');
     
     // Синхронизация с ближайшей игрой
     const initialDelay = getDelayToNextGame();
