@@ -182,7 +182,7 @@ async function run() {
     let timeout;
     
     try {
-        browser = await chromium.launch({ headless: false });
+        browser = await chromium.launch({ headless: true });
         const page = await browser.newPage();
         
         timeout = setTimeout(async () => {
