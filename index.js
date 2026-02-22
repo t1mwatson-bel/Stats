@@ -49,25 +49,21 @@ async function sendOrEditTelegram(newMessage) {
     }
 }
 
-// НОВАЯ ФУНКЦИЯ ПОИСКА СТОЛОВ (работает везде)
 async function checkTables(page) {
-    // Ждем загрузки списка игр
-    await page.waitForSelector('a[href*="/ru/live/baccarat/"]', { timeout: 10000 }).catch(() => {});
+    const games = await page.$$('li.dashboard-champ__game');
     
-    // Находим все ссылки на игры
-    const links = await page.$$('a[href*="/ru/live/baccarat/"]');
-    
-    for (const link of links) {
-        // Получаем текст рядом со ссылкой
-        const linkText = await page.evaluate(el => {
-            const parent = el.closest('li, div');
-            return parent ? parent.textContent || '' : '';
-        }, link);
+    for (const game of games) {
+        const hasTimer = await game.$('.dashboard-game-info__time') !== null;
+        const isFinished = await game.evaluate(el => {
+            const period = el.querySelector('.dashboard-game-info__period');
+            return period ? period.textContent.includes('Игра завершена') : false;
+        });
         
-        // Если нет надписи "Игра завершена" - берем эту игру
-        if (!linkText.includes('Игра завершена')) {
-            const href = await link.getAttribute('href');
-            if (href) return href;
+        if (hasTimer && !isFinished) {
+            const link = await game.$('a[href*="/ru/live/baccarat/"]');
+            if (link) {
+                return await link.getAttribute('href');
+            }
         }
     }
     
@@ -179,7 +175,7 @@ async function run() {
     let timeout;
     
     try {
-        browser = await chromium.launch({ headless: true });
+        browser = await chromium.launch({ headless: false });
         const page = await browser.newPage();
         
         timeout = setTimeout(async () => {
@@ -204,25 +200,22 @@ async function run() {
         await page.click(`a[href="${activeLink}"]`);
         await page.waitForTimeout(3000);
         
+        // ПОЛУЧАЕМ НОМЕР СТОЛА
         let gameNumber = await page.evaluate(() => {
-    // Ищем любой элемент, который содержит только цифры (номер стола)
-    const allElements = document.querySelectorAll('*');
-    for (const el of allElements) {
-        const text = el.textContent?.trim();
-        if (text && /^\d{3,4}$/.test(text)) {
-            return text;
-        }
-    }
-    return null;
-});
+            const el = document.querySelector('.dashboard-game-info__additional-info');
+            return el ? el.textContent.trim() : null;
+        });
         
         if (!gameNumber) {
+            // Если номера нет, увеличиваем последний на 1
             gameNumber = (parseInt(lastGameNumber) + 1).toString();
             console.log('Номер не найден, используем следующий:', gameNumber);
         } else {
+            // Если номер есть, используем его
             console.log('Найден номер стола:', gameNumber);
         }
         
+        // СОХРАНЯЕМ НОМЕР В ФАЙЛ (ВСЕГДА!)
         lastGameNumber = gameNumber;
         fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
         console.log('Сохранен номер в файл:', gameNumber);
