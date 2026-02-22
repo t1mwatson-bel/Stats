@@ -8,3 +8,5 @@ RUN npm install
 COPY index.js ./
 
 CMD ["node", "index.js"]
+
+COPY last_number.txt ./
