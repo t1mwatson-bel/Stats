@@ -23,7 +23,7 @@ function formatCards(cards) {
 }
 
 function determineTurn(playerCards, bankerCards) {
-    if (playerCards.length === 2 && bankerCards.length === 2) return 'player';
+    if (playerCards.length === 2 && bankerCards.length === 2) return null;
     if (playerCards.length === 3 && bankerCards.length === 2) return 'banker';
     if (playerCards.length === 2 && bankerCards.length === 3) return 'player';
     return null;
@@ -47,22 +47,21 @@ async function sendOrEditTelegram(newMessage) {
     }
 }
 
-// Функция поиска стола с таймером (живая игра)
-async function findLiveGame(page) {
+// Поиск первого стола с таймером
+async function findFirstLiveGame(page) {
     const games = await page.$$('.dashboard-game');
-
     for (const game of games) {
         const hasTimer = await game.$('.dashboard-game-info__time') !== null;
+        if (!hasTimer) continue;
+
         const isFinished = await game.evaluate(el => {
             const period = el.querySelector('.dashboard-game-info__period');
             return period?.textContent.includes('Игра завершена') ?? false;
         });
 
-        if (hasTimer && !isFinished) {
+        if (!isFinished) {
             const link = await game.$('a[href*="/ru/live/baccarat/"]');
-            if (link) {
-                return await link.getAttribute('href');
-            }
+            if (link) return await link.getAttribute('href');
         }
     }
     return null;
@@ -117,6 +116,7 @@ async function monitorGame(page, gameNumber) {
     while (true) {
         const cards = await getCards(page);
 
+        // Ждём только появления надписи "Игра завершена"
         const isFinished = await page.evaluate(() => {
             const el = document.querySelector('.dashboard-game-info__period');
             return el && el.textContent.includes('Игра завершена');
@@ -137,13 +137,12 @@ async function monitorGame(page, gameNumber) {
             }
 
             await sendOrEditTelegram(message);
-            console.log(`Игра #${gameNumber} завершена`);
-            return; // Выход из monitorGame
+            console.log(`✅ Игра #${gameNumber} завершена, закрываю браузер`);
+            return;
         }
 
         if (cards.player.length > 0 && cards.banker.length > 0) {
             const turn = determineTurn(cards.player, cards.banker);
-
             let message;
             if (turn === 'player') {
                 message = `⏱№${gameNumber} 👉${cards.pScore}(${formatCards(cards.player)}) -${cards.bScore} (${formatCards(cards.banker)})`;
@@ -174,17 +173,17 @@ async function run() {
     const page = await browser.newPage();
 
     await page.goto(URL);
-    console.log('Ищем живой стол с таймером...');
+    console.log('🔍 Ищу первый стол с таймером...');
 
     let liveLink = null;
     while (!liveLink) {
-        liveLink = await findLiveGame(page);
+        liveLink = await findFirstLiveGame(page);
         if (!liveLink) {
-            await page.waitForTimeout(1000); // быстрая прокрутка
+            await page.waitForTimeout(1000);
         }
     }
 
-    console.log('Найден живой стол:', liveLink);
+    console.log('🎯 Захожу в стол:', liveLink);
     await page.click(`a[href="${liveLink}"]`);
     await page.waitForTimeout(3000);
 
@@ -195,9 +194,9 @@ async function run() {
 
     if (!gameNumber) {
         gameNumber = (parseInt(lastGameNumber) + 1).toString();
-        console.log('Номер не найден, используем следующий:', gameNumber);
+        console.log('⚠️ Номер не найден, присваиваю:', gameNumber);
     } else {
-        console.log('Найден номер стола:', gameNumber);
+        console.log('🎰 Номер стола:', gameNumber);
     }
 
     lastGameNumber = gameNumber;
@@ -220,9 +219,9 @@ async function run() {
     lastMessageText = '';
 }
 
-// Бесконечный цикл
+// Бесконечный цикл: после закрытия браузера сразу запускаем новый поиск
 (async () => {
-    console.log('Бот запущен. Последний номер:', lastGameNumber);
+    console.log('🤖 Бот запущен. Последний номер:', lastGameNumber);
     while (true) {
         await run();
     }
