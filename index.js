@@ -30,7 +30,7 @@ function determineTurn(playerCards, bankerCards) {
     return null;
 }
 
-// НОВАЯ ФУНКЦИЯ: получаем номер игры по московскому времени
+// Функция получения номера игры по московскому времени (цикл с 3:00)
 function getGameNumberByTime() {
     const now = new Date();
     
@@ -39,21 +39,27 @@ function getGameNumberByTime() {
     
     const currentHours = mskTime.getHours();
     const currentMinutes = mskTime.getMinutes();
+    const currentSeconds = mskTime.getSeconds();
     
-    // Начало отсчета: 3:00 МСК
+    // Начало цикла: 3:00 МСК
     const startHour = 3;
     const startMinute = 0;
     
-    // Если сейчас меньше 3:00, значит игры еще не начались
-    if (currentHours < startHour || (currentHours === startHour && currentMinutes < startMinute)) {
-        return null; // игры еще нет
+    // Считаем минуты с 3:00
+    let minutesSinceStart;
+    
+    if (currentHours < startHour) {
+        // Например 2:30 -> (24 - 3) + 2 = 23 часа = 1380 минут + 30 минут = 1410
+        const hoursBeforeMidnight = 24 - startHour;
+        const hoursAfterMidnight = currentHours;
+        minutesSinceStart = (hoursBeforeMidnight + hoursAfterMidnight) * 60 + (currentMinutes - startMinute);
+    } else {
+        // После 3:00
+        minutesSinceStart = (currentHours - startHour) * 60 + (currentMinutes - startMinute);
     }
     
-    // Считаем сколько минут прошло с 3:00
-    const minutesSinceStart = (currentHours - startHour) * 60 + (currentMinutes - startMinute);
-    
     // Номер игры = минуты с начала + 1
-    // Например: 3:00 = 1, 3:01 = 2, 3:02 = 3...
+    // 3:00 = 1, 3:01 = 2, ..., 2:59 = 1440
     return minutesSinceStart + 1;
 }
 
@@ -244,20 +250,14 @@ async function run() {
         await page.click(`a[href="${activeLink}"]`);
         await page.waitForTimeout(3000);
         
-        // ПОЛУЧАЕМ НОМЕР ИГРЫ ПО МОСКОВСКОМУ ВРЕМЕНИ
-        let gameNumber = getGameNumberByTime();
-        
-        if (!gameNumber) {
-            console.log('⏰ До начала игр еще время (старт в 3:00 МСК)');
-            return; // выходим, игры нет
-        }
+        // ПОЛУЧАЕМ НОМЕР ИГРЫ ПО МОСКОВСКОМУ ВРЕМЕНИ (ЦИКЛИЧЕСКИЙ)
+        const gameNumber = getGameNumberByTime();
         
         console.log('🎰 Номер игры по времени (МСК):', gameNumber);
-        gameNumber = gameNumber.toString();
         
-        // СОХРАНЯЕМ НОМЕР В ФАЙЛ (на всякий случай)
-        lastGameNumber = gameNumber;
-        fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
+        // СОХРАНЯЕМ НОМЕР В ФАЙЛ (для истории)
+        lastGameNumber = gameNumber.toString();
+        fs.writeFileSync(LAST_NUMBER_FILE, lastGameNumber);
         console.log('💾 Номер сохранен в файл');
         
         let attempts = 0;
@@ -304,7 +304,7 @@ function getDelayToNextGame() {
 // Синхронизированный запуск
 (async () => {
     console.log('🤖 Бот запущен');
-    console.log('🎯 Номера игр синхронизированы с московским временем (старт в 3:00)');
+    console.log('🎯 Номера игр: циклические сброс в 3:00 МСК (1-1440)');
     console.log('🎯 Запуск браузера: каждую минуту в :02 секунд');
     
     // Синхронизация с ближайшей игрой
