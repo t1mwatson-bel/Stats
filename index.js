@@ -175,19 +175,19 @@ async function run() {
     let timeout;
     
     try {
-        // ========== ЭТО ЕДИНСТВЕННОЕ ИЗМЕНЕНИЕ ДЛЯ RAILWAY ==========
+        // Запуск браузера для сервера
         browser = await chromium.launch({ 
-            headless: true,        // true для сервера (было false для ПК)
-            args: ['--no-sandbox'] // обязательно для Linux
+            headless: true,
+            args: ['--no-sandbox']
         });
-        // ============================================================
         
         const page = await browser.newPage();
         
+        // ТАЙМЕР НА 10 МИНУТ (600000 мс)
         timeout = setTimeout(async () => {
-            console.log('⏱ 2 минуты прошло, закрываем браузер...');
+            console.log('⏱ 10 минут прошло, закрываем браузер...');
             if (browser) await browser.close();
-        }, 120000);
+        }, 600000);
         
         await page.goto(URL);
         console.log('Проверяем все столы...');
@@ -221,7 +221,7 @@ async function run() {
             console.log('Найден номер стола:', gameNumber);
         }
         
-        // СОХРАНЯЕМ НОМЕР В ФАЙЛ (ВСЕГДА!)
+        // СОХРАНЯЕМ НОМЕР В ФАЙЛ
         lastGameNumber = gameNumber;
         fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
         console.log('Сохранен номер в файл:', gameNumber);
