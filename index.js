@@ -47,10 +47,16 @@ async function sendOrEditTelegram(newMessage) {
     }
 }
 
-// Поиск первого стола с таймером
+// Поиск САМОГО НИЖНЕГО стола с таймером
 async function findFirstLiveGame(page) {
+    await page.waitForSelector('.dashboard-game-info__time', { timeout: 10000 }).catch(() => null);
+    
     const games = await page.$$('.dashboard-game');
-    for (const game of games) {
+    
+    // Идём с конца — самый свежий стол будет последним
+    for (let i = games.length - 1; i >= 0; i--) {
+        const game = games[i];
+        
         const hasTimer = await game.$('.dashboard-game-info__time') !== null;
         if (!hasTimer) continue;
 
@@ -64,6 +70,7 @@ async function findFirstLiveGame(page) {
             if (link) return await link.getAttribute('href');
         }
     }
+    
     return null;
 }
 
@@ -116,7 +123,6 @@ async function monitorGame(page, gameNumber) {
     while (true) {
         const cards = await getCards(page);
 
-        // Ждём только появления надписи "Игра завершена"
         const isFinished = await page.evaluate(() => {
             const el = document.querySelector('.dashboard-game-info__period');
             return el && el.textContent.includes('Игра завершена');
@@ -173,7 +179,7 @@ async function run() {
     const page = await browser.newPage();
 
     await page.goto(URL);
-    console.log('🔍 Ищу первый стол с таймером...');
+    console.log('🔍 Ищу первый стол с таймером (с конца)...');
 
     let liveLink = null;
     while (!liveLink) {
@@ -187,16 +193,18 @@ async function run() {
     await page.click(`a[href="${liveLink}"]`);
     await page.waitForTimeout(3000);
 
+    // Берём номер игры из URL
     let gameNumber = await page.evaluate(() => {
-        const el = document.querySelector('.dashboard-game-info__additional-info');
-        return el ? el.textContent.trim() : null;
+        const url = window.location.href;
+        const match = url.match(/\/(\d+)-player-banker/);
+        return match ? match[1] : null;
     });
 
     if (!gameNumber) {
         gameNumber = (parseInt(lastGameNumber) + 1).toString();
-        console.log('⚠️ Номер не найден, присваиваю:', gameNumber);
+        console.log('⚠️ Номер не найден в URL, присваиваю:', gameNumber);
     } else {
-        console.log('🎰 Номер стола:', gameNumber);
+        console.log('🎰 Номер игры из URL:', gameNumber);
     }
 
     lastGameNumber = gameNumber;
@@ -219,7 +227,7 @@ async function run() {
     lastMessageText = '';
 }
 
-// Бесконечный цикл: после закрытия браузера сразу запускаем новый поиск
+// Бесконечный цикл
 (async () => {
     console.log('🤖 Бот запущен. Последний номер:', lastGameNumber);
     while (true) {
