@@ -1,4 +1,3 @@
-dockerfile
 FROM mcr.microsoft.com/playwright:v1.58.2-focal
 
 WORKDIR /app
