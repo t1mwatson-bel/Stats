@@ -119,7 +119,7 @@ async function monitorGame(page, gameNumber) {
     while (true) {
         const cards = await getCards(page);
         
-        // ИСПРАВЛЕНО: используем твой селектор
+        // Проверка на завершение игры через селектор
         const isGameOver = await page.evaluate(() => {
             const panel = document.querySelector('.market-grid__game-over-panel');
             if (!panel) return false;
@@ -128,7 +128,6 @@ async function monitorGame(page, gameNumber) {
         });
         
         if (isGameOver) {
-            // ДОБАВЛЕНО: ждем 10 секунд перед финальным сообщением
             console.log('Игра завершена, жду 10 секунд...');
             await page.waitForTimeout(10000);
             
@@ -182,11 +181,14 @@ async function run() {
     let timeout;
     
     try {
-        browser = await chromium.launch({ headless: true });
+        const startTime = new Date();
+        console.log(`🟢 Браузер открыт в ${startTime.toLocaleTimeString()}.${startTime.getMilliseconds()}`);
+        
+        browser = await chromium.launch({ headless: true }); // для сервера
         const page = await browser.newPage();
         
         timeout = setTimeout(async () => {
-            console.log('⏱ 2 минуты прошло, закрываем браузер...');
+            console.log(`⏱ 2 минуты прошло, закрываю браузер от ${startTime.toLocaleTimeString()}`);
             if (browser) await browser.close();
         }, 120000);
         
@@ -249,9 +251,47 @@ async function run() {
     }
 }
 
-// ИЗМЕНЕНО: теперь 45 секунд
-setInterval(run, 45000);
-console.log('✅ Бот запущен. Последний номер:', lastGameNumber);
-console.log('⏱ Интервал: 45 секунд');
-console.log('⏱ Таймаут браузера: 2 минуты');
-console.log('🔍 Селектор: .market-grid__game-over-panel');
+// Функция для расчета задержки до следующей игры в :05 секунд
+function getDelayToNextGame() {
+    const now = new Date();
+    const seconds = now.getSeconds();
+    const milliseconds = now.getMilliseconds();
+    const targetSeconds = 5;
+    
+    let delaySeconds;
+    if (seconds < targetSeconds) {
+        delaySeconds = targetSeconds - seconds;
+    } else {
+        delaySeconds = (60 - seconds) + targetSeconds;
+    }
+    
+    return (delaySeconds * 1000) - milliseconds;
+}
+
+// Синхронизированный запуск
+(async () => {
+    console.log('🤖 Бот запущен. Последний номер:', lastGameNumber);
+    console.log('🎯 Целевое время запуска: каждую минуту в :05 секунд');
+    
+    // Синхронизация с ближайшей игрой
+    const initialDelay = getDelayToNextGame();
+    const nextRunTime = new Date(Date.now() + initialDelay);
+    console.log(`⏱ Синхронизация: первый запуск через ${(initialDelay/1000).toFixed(3)} секунд`);
+    console.log(`⏱ Время первого запуска: ${nextRunTime.toLocaleTimeString()}.${nextRunTime.getMilliseconds()}`);
+    
+    await new Promise(resolve => setTimeout(resolve, initialDelay));
+    
+    console.log('✅ Синхронизировались! Запуск каждые 60 секунд');
+    console.log('⏱ Таймаут браузера: 2 минуты');
+    console.log('🔍 Селектор: .market-grid__game-over-panel');
+    
+    // Запускаем бесконечный цикл с интервалом 60 секунд
+    while (true) {
+        const now = new Date();
+        console.log(`\n🚀 Запуск браузера в ${now.toLocaleTimeString()}.${now.getMilliseconds()}`);
+        
+        run(); // не ждем завершения, браузеры работают параллельно
+        
+        await new Promise(resolve => setTimeout(resolve, 60000));
+    }
+})();
