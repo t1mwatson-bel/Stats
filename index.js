@@ -128,23 +128,31 @@ async function monitorGame(page, gameNumber) {
         });
         
         if (isGameOver) {
-            console.log('Игра завершена, жду 10 секунд...');
-            await page.waitForTimeout(10000);
+            // ✅ Сначала получаем карты и отправляем результат
+            const cards = await getCards(page);
             
-            const total = parseInt(cards.pScore) + parseInt(cards.bScore);
-            const winner = cards.pScore > cards.bScore ? 'П1' : (cards.bScore > cards.pScore ? 'П2' : 'X');
-            const noDrawFlag = cards.player.length === 2 && cards.banker.length === 2 ? '#R ' : '';
-            
-            let message;
-            if (cards.pScore > cards.bScore) {
-                message = `#N${gameNumber} ✅${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
-            } else if (cards.bScore > cards.pScore) {
-                message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) - ✅${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
-            } else {
-                message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) 🔰 ${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
+            if (cards.player.length > 0 || cards.banker.length > 0) {
+                console.log('Игра завершена, отправляю результат...');
+                
+                const total = parseInt(cards.pScore) + parseInt(cards.bScore);
+                const winner = cards.pScore > cards.bScore ? 'П1' : (cards.bScore > cards.pScore ? 'П2' : 'X');
+                const noDrawFlag = cards.player.length === 2 && cards.banker.length === 2 ? '#R ' : '';
+                
+                let message;
+                if (cards.pScore > cards.bScore) {
+                    message = `#N${gameNumber} ✅${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
+                } else if (cards.bScore > cards.pScore) {
+                    message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) - ✅${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
+                } else {
+                    message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) 🔰 ${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
+                }
+                
+                await sendOrEditTelegram(message);
             }
             
-            await sendOrEditTelegram(message);
+            // ✅ Потом ждем 10 секунд и закрываем
+            console.log('Жду 10 секунд перед закрытием...');
+            await page.waitForTimeout(10000);
             break;
         }
         
@@ -184,7 +192,7 @@ async function run() {
         const startTime = new Date();
         console.log(`🟢 Браузер открыт в ${startTime.toLocaleTimeString()}.${startTime.getMilliseconds()}`);
         
-        browser = await chromium.launch({ headless: true }); // для сервера
+        browser = await chromium.launch({ headless: true });
         const page = await browser.newPage();
         
         timeout = setTimeout(async () => {
@@ -251,7 +259,7 @@ async function run() {
     }
 }
 
-// Функция для расчета задержки до следующей игры в :05 секунд
+// Функция для расчета задержки до запуска браузера в :02 секунд
 function getDelayToNextGame() {
     const now = new Date();
     const seconds = now.getSeconds();
@@ -271,7 +279,7 @@ function getDelayToNextGame() {
 // Синхронизированный запуск
 (async () => {
     console.log('🤖 Бот запущен. Последний номер:', lastGameNumber);
-    console.log('🎯 Целевое время запуска: каждую минуту в :05 секунд');
+    console.log('🎯 Целевое время запуска: каждую минуту в :02 секунд');
     
     // Синхронизация с ближайшей игрой
     const initialDelay = getDelayToNextGame();
@@ -290,7 +298,7 @@ function getDelayToNextGame() {
         const now = new Date();
         console.log(`\n🚀 Запуск браузера в ${now.toLocaleTimeString()}.${now.getMilliseconds()}`);
         
-        run(); // не ждем завершения, браузеры работают параллельно
+        run(); // не ждем завершения
         
         await new Promise(resolve => setTimeout(resolve, 60000));
     }
