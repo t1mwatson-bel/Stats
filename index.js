@@ -49,25 +49,25 @@ async function sendOrEditTelegram(newMessage) {
     }
 }
 
-// ИСПРАВЛЕННАЯ ФУНКЦИЯ ПОИСКА СТОЛОВ
+// НОВАЯ ФУНКЦИЯ ПОИСКА СТОЛОВ (работает везде)
 async function checkTables(page) {
-    // Ищем ВСЕ ссылки на игры в баккара
+    // Ждем загрузки списка игр
+    await page.waitForSelector('a[href*="/ru/live/baccarat/"]', { timeout: 10000 }).catch(() => {});
+    
+    // Находим все ссылки на игры
     const links = await page.$$('a[href*="/ru/live/baccarat/"]');
     
     for (const link of links) {
-        // Получаем родительскую карточку игры
-        const game = await link.evaluateHandle(el => el.closest('li.dashboard-champ__game, div.dashboard-game'));
+        // Получаем текст рядом со ссылкой
+        const linkText = await page.evaluate(el => {
+            const parent = el.closest('li, div');
+            return parent ? parent.textContent || '' : '';
+        }, link);
         
-        if (game) {
-            // Проверяем, не завершена ли игра
-            const isFinished = await page.evaluate(gameEl => {
-                const text = gameEl.textContent || '';
-                return text.includes('Игра завершена');
-            }, game);
-            
-            if (!isFinished) {
-                return await link.getAttribute('href');
-            }
+        // Если нет надписи "Игра завершена" - берем эту игру
+        if (!linkText.includes('Игра завершена')) {
+            const href = await link.getAttribute('href');
+            if (href) return href;
         }
     }
     
@@ -204,7 +204,6 @@ async function run() {
         await page.click(`a[href="${activeLink}"]`);
         await page.waitForTimeout(3000);
         
-        // ПОЛУЧАЕМ НОМЕР СТОЛА
         let gameNumber = await page.evaluate(() => {
             const el = document.querySelector('.dashboard-game-info__additional-info');
             return el ? el.textContent.trim() : null;
@@ -217,7 +216,6 @@ async function run() {
             console.log('Найден номер стола:', gameNumber);
         }
         
-        // СОХРАНЯЕМ НОМЕР В ФАЙЛ
         lastGameNumber = gameNumber;
         fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
         console.log('Сохранен номер в файл:', gameNumber);
