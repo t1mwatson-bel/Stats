@@ -1,20 +1,10 @@
-FROM mcr.microsoft.com/playwright:v1.58.2-jammy
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Копируем все файлы проекта
-COPY package*.json ./
-RUN npm install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем все остальные файлы, включая index.js и last_number.txt
 COPY . .
 
-CMD ["node", "index.js"]
-
-RUN apt-get update && apt-get install -y \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libdrm2 \
-    libxkbcommon0 \
-    libgbm1 \
-    libasound2
+CMD ["python", "main.py"]
