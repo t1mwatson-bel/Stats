@@ -13,37 +13,39 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 let lastMessageId = null;
 let lastMessageText = '';
 let lastGameNumber = '0';
+let browserCounter = 0;
 
 if (fs.existsSync(LAST_NUMBER_FILE)) {
     lastGameNumber = fs.readFileSync(LAST_NUMBER_FILE, 'utf8');
     console.log('Загружен последний номер:', lastGameNumber);
 }
 
-function getBusyTables() {
+// ===== ФУНКЦИИ ДЛЯ РАБОТЫ С ЗАНЯТЫМИ ПОЗИЦИЯМИ =====
+function getBusyPositions() {
     try {
         if (fs.existsSync(BUSY_TABLES_FILE)) {
             const content = fs.readFileSync(BUSY_TABLES_FILE, 'utf8');
-            return new Set(content.split('\n').filter(line => line.trim()));
+            return new Set(content.split('\n').filter(line => line.startsWith('pos_')));
         }
     } catch (e) {}
     return new Set();
 }
 
-function markTableBusy(tableId, browserId) {
+function markPositionBusy(position, browserId) {
     try {
-        const busy = getBusyTables();
-        busy.add(tableId);
+        const busy = getBusyPositions();
+        busy.add(`pos_${position}`);
         fs.writeFileSync(BUSY_TABLES_FILE, Array.from(busy).join('\n'));
-        console.log(`🔒 Стол ${tableId} занят браузером ${browserId}`);
+        console.log(`🔒 Позиция ${position} занята браузером ${browserId}`);
     } catch (e) {}
 }
 
-function markTableFree(tableId) {
+function markPositionFree(position) {
     try {
-        const busy = getBusyTables();
-        busy.delete(tableId);
+        const busy = getBusyPositions();
+        busy.delete(`pos_${position}`);
         fs.writeFileSync(BUSY_TABLES_FILE, Array.from(busy).join('\n'));
-        console.log(`🔓 Стол ${tableId} освобожден`);
+        console.log(`🔓 Позиция ${position} освобождена`);
     } catch (e) {}
 }
 
@@ -107,36 +109,14 @@ async function sendOrEditTelegram(newMessage) {
     }
 }
 
-async function getTimerValue(game) {
-    try {
-        const timerText = await game.$eval('.dashboard-game-info__time', el => el.textContent.trim());
-        const match = timerText.match(/(\d+):(\d+)/);
-        if (match) {
-            const minutes = parseInt(match[1]);
-            const seconds = parseInt(match[2]);
-            return minutes * 60 + seconds;
-        }
-    } catch (e) {}
-    return 9999;
-}
-
-async function findFreeGameWithSmallestTimer(page, browserId) {
-    console.log(`🔍 Браузер ${browserId} ищет свободный стол...`);
-    
+// ===== ПОИСК АКТИВНЫХ СТОЛОВ =====
+async function getActiveGames(page) {
     const games = await page.$$('.dashboard-game');
-    console.log(`Найдено столов: ${games.length}`);
-    
-    const busyTables = getBusyTables();
-    console.log(`Занятые столы: ${Array.from(busyTables).join(', ') || 'нет'}`);
-    
-    let availableGames = [];
+    const activeGames = [];
     
     for (let i = 0; i < games.length; i++) {
         const game = games[i];
         
-        const hasTimer = await game.$('.dashboard-game-info__time') !== null;
-        if (!hasTimer) continue;
-
         const isFinished = await game.evaluate(el => {
             const period = el.querySelector('.dashboard-game-info__period');
             return period?.textContent.includes('Игра завершена') ?? false;
@@ -146,34 +126,40 @@ async function findFreeGameWithSmallestTimer(page, browserId) {
             const link = await game.$('a[href*="/ru/live/baccarat/"]');
             if (link) {
                 const href = await link.getAttribute('href');
-                const tableId = href.split('/').pop();
-                const timerSeconds = await getTimerValue(game);
-                
-                if (!busyTables.has(tableId)) {
-                    availableGames.push({
-                        index: i,
-                        href,
-                        tableId,
-                        timer: timerSeconds
-                    });
-                    console.log(`📊 Стол ${i+1} (ID: ${tableId}): таймер ${timerSeconds} сек - СВОБОДЕН`);
-                } else {
-                    console.log(`⛔ Стол ${i+1} (ID: ${tableId}): ЗАНЯТ`);
-                }
+                activeGames.push({
+                    index: i,
+                    href,
+                    element: game
+                });
             }
         }
     }
     
-    availableGames.sort((a, b) => a.timer - b.timer);
+    return activeGames;
+}
+
+// ===== ПОИСК СВОБОДНОЙ ПОЗИЦИИ =====
+async function findFreePosition(page, browserId) {
+    console.log(`🔍 Браузер ${browserId} ищет свободную позицию...`);
     
-    if (availableGames.length > 0) {
-        const selected = availableGames[0];
-        console.log(`🎯 Браузер ${browserId} выбрал стол ${selected.index+1} (ID: ${selected.tableId}) с таймером ${selected.timer} сек`);
-        markTableBusy(selected.tableId, browserId);
-        return selected;
+    const activeGames = await getActiveGames(page);
+    const busyPositions = getBusyPositions();
+    
+    console.log(`Найдено активных столов: ${activeGames.length}`);
+    console.log(`Занятые позиции: ${Array.from(busyPositions).map(p => p.replace('pos_', '')).join(', ') || 'нет'}`);
+    
+    // Ищем самую верхнюю свободную позицию
+    for (let pos = 0; pos < activeGames.length; pos++) {
+        if (!busyPositions.has(`pos_${pos}`)) {
+            console.log(`🎯 Браузер ${browserId} выбрал позицию ${pos}`);
+            return {
+                position: pos,
+                href: activeGames[pos].href
+            };
+        }
     }
     
-    console.log('❌ Свободных столов не найдено');
+    console.log('❌ Свободных позиций не найдено');
     return null;
 }
 
@@ -222,8 +208,9 @@ async function getCards(page) {
     return { player, banker, pScore, bScore };
 }
 
-async function monitorGame(page, gameNumber, tableId) {
-    console.log(`🎮 Мониторинг игры #${gameNumber} (стол ${tableId})`);
+// ===== МОНИТОРИНГ ИГРЫ =====
+async function monitorGame(page, gameNumber, position) {
+    console.log(`🎮 Мониторинг игры #${gameNumber} (позиция ${position})`);
     
     let lastCards = { player: [], banker: [], pScore: '0', bScore: '0' };
     
@@ -309,28 +296,23 @@ async function monitorGame(page, gameNumber, tableId) {
     }
 }
 
+// ===== ОСНОВНАЯ ФУНКЦИЯ =====
 async function run() {
-    const browserId = Math.floor(Math.random() * 1000);
+    const browserId = browserCounter++;
     let browser;
     let timeout;
-    let currentTableId = null;
+    let currentPosition = null;
     const startTime = Date.now();
     
     try {
         console.log(`\n🟢 Браузер ${browserId} открыт в ${new Date().toLocaleTimeString()}.${new Date().getMilliseconds()}`);
         
-        // Исправленный launch с дополнительными флагами
         browser = await chromium.launch({ 
             headless: true,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu',
-                '--disable-software-rasterizer',
-                '--disable-features=VizDisplayCompositor',
-                '--single-process'
+                '--disable-dev-shm-usage'
             ]
         });
         
@@ -338,36 +320,33 @@ async function run() {
         
         timeout = setTimeout(async () => {
             console.log(`⏱ Браузер ${browserId} завершает работу (4 минуты)`);
-            if (currentTableId) {
-                markTableFree(currentTableId);
+            if (currentPosition !== null) {
+                markPositionFree(currentPosition);
             }
             if (browser && browser.isConnected()) {
                 await browser.close().catch(() => {});
             }
         }, 240000);
         
-        try {
-            await page.goto(URL, { timeout: 30000, waitUntil: 'domcontentloaded' });
-        } catch (e) {
+        await page.goto(URL, { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(e => {
             console.log(`❌ Ошибка загрузки страницы:`, e.message);
             return;
-        }
+        });
         
-        const tableInfo = await findFreeGameWithSmallestTimer(page, browserId);
-        if (!tableInfo) {
-            console.log(`❌ Браузер ${browserId} не нашел свободных столов`);
+        // Ищем свободную позицию
+        const positionInfo = await findFreePosition(page, browserId);
+        if (!positionInfo) {
+            console.log(`❌ Браузер ${browserId} не нашел свободных позиций`);
             return;
         }
         
-        currentTableId = tableInfo.tableId;
-        console.log(`Браузер ${browserId} заходит в стол:`, tableInfo.href);
+        currentPosition = positionInfo.position;
+        console.log(`Браузер ${browserId} заходит в позицию ${currentPosition}:`, positionInfo.href);
         
-        try {
-            await page.click(`a[href="${tableInfo.href}"]`);
-        } catch (e) {
+        await page.click(`a[href="${positionInfo.href}"]`).catch(e => {
             console.log(`❌ Ошибка клика:`, e.message);
             return;
-        }
+        });
         
         let gameNumber = getGameNumberByTime();
         if (!gameNumber) {
@@ -392,7 +371,7 @@ async function run() {
         }
         
         if (cards.player.length > 0 && cards.banker.length > 0 && !page.isClosed()) {
-            await monitorGame(page, gameNumber, currentTableId);
+            await monitorGame(page, gameNumber, currentPosition);
         } else {
             console.log('⚠️ Карты не появились за 12 попыток');
         }
@@ -401,8 +380,8 @@ async function run() {
         console.log(`❌ Ошибка браузера ${browserId}:`, e.message);
     } finally {
         if (timeout) clearTimeout(timeout);
-        if (currentTableId) {
-            markTableFree(currentTableId);
+        if (currentPosition !== null) {
+            markPositionFree(currentPosition);
         }
         if (browser && browser.isConnected()) {
             await browser.close().catch(() => {});
@@ -413,6 +392,7 @@ async function run() {
     }
 }
 
+// ===== ЗАДЕРЖКА ДО :58 =====
 function getDelayTo58() {
     const now = new Date();
     const seconds = now.getSeconds();
@@ -429,9 +409,10 @@ function getDelayTo58() {
     return (delaySeconds * 1000) - milliseconds;
 }
 
+// ===== ЗАПУСК =====
 (async () => {
     console.log('🤖 Бот Baccarat запущен');
-    console.log('🎯 Беру СВОБОДНЫЙ стол с НАИМЕНЬШИМ таймером');
+    console.log('🎯 Динамическое смещение: каждый браузер занимает верхнюю свободную позицию');
     console.log('⏱ Запуск в :58 каждой минуты');
     console.log('⏱ Жизнь браузера: 4 минуты');
     
