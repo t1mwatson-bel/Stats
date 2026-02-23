@@ -3,7 +3,7 @@ import json
 import logging
 import asyncio
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, MessageHandler, ContextTypes, filters
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -11,19 +11,16 @@ import httpx
 import re
 
 # === КОНФИГУРАЦИЯ ===
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "6338351608:AAGMV_lCJvQnwnnVTTBmtqdT3SHhp9iy1zQ")
-SOURCE_CHAT_ID = int(os.environ.get("SOURCE_CHAT_ID", "-1001471933679"))
-TARGET_CHAT_ID = int(os.environ.get("TARGET_CHAT_ID", "-1003469691743"))
-PREDICTION_CHANNEL_ID = int(os.environ.get("PREDICTION_CHANNEL_ID", "-1003252757578"))
+BOT_TOKEN = "6338351608:AAGMV_lCJvQnwnnVTTBmtqdT3SHhp9iy1zQ"
+SOURCE_CHAT_ID = -1001471933679  # Канал-источник
+TARGET_CHAT_ID = -1003469691743  # Канал-зеркало
+PREDICTION_CHANNEL_ID = -1003252757578  # ОТДЕЛЬНЫЙ КАНАЛ ДЛЯ ПРОГНОЗОВ (ЗАМЕНИ НА СВОЙ!)
 
-# Файлы данных (в Railway можно писать в /app или /tmp)
-DATA_DIR = os.path.join(os.getcwd(), 'data')
-os.makedirs(DATA_DIR, exist_ok=True)
-
-MESSAGE_MAP_FILE = os.path.join(DATA_DIR, 'message_map.json')
-CYCLE_STATS_FILE = os.path.join(DATA_DIR, 'cycle_stats.json')
-ROLLING_STATS_FILE = os.path.join(DATA_DIR, 'rolling_stats.json')
-PREDICTIONS_HISTORY_FILE = os.path.join(DATA_DIR, 'predictions_history.json')
+# Файлы данных
+MESSAGE_MAP_FILE = 'message_map.json'
+CYCLE_STATS_FILE = 'cycle_stats.json'
+ROLLING_STATS_FILE = 'rolling_stats.json'
+PREDICTIONS_HISTORY_FILE = 'predictions_history.json'
 
 # Параметры анализа
 CYCLE_LENGTH = 1440
@@ -535,8 +532,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # === ▶️ ЗАПУСК ===
-async def main():
-    """Асинхронный запуск бота"""
+def main():
     load_analytics_data()
     logger.info(f"✅ Бот запущен")
     logger.info(f"📊 Зеркало: {TARGET_CHAT_ID}")
@@ -555,8 +551,8 @@ async def main():
     ))
 
     logger.info("⚡ Бот готов к работе")
-    await app.run_polling()
+    app.run_polling()
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
