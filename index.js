@@ -45,10 +45,8 @@ function getGameNumberByTime() {
         return null;
     }
     
-    // Считаем минуты с 3:00
     let minutesSinceStart = (currentHours - startHour) * 60 + (currentMinutes - startMinute);
     
-    // Если секунды меньше 5, значит игра еще не началась, номер относится к предыдущей минуте
     if (currentSeconds < 5) {
         minutesSinceStart -= 1;
     }
@@ -72,6 +70,13 @@ async function sendOrEditTelegram(newMessage) {
         lastMessageText = newMessage;
     } catch (e) {
         console.log('TG error:', e.message);
+        try {
+            const msg = await bot.sendMessage(CHAT, newMessage);
+            lastMessageId = msg.message_id;
+            lastMessageText = newMessage;
+        } catch (sendError) {
+            console.log('❌ Критическая ошибка TG:', sendError.message);
+        }
     }
 }
 
@@ -138,8 +143,8 @@ async function getCards(page) {
     return { player, banker, pScore, bScore };
 }
 
-async function monitorGame(page, gameNumber) {
-    let lastCards = { player: [], banker: [], pScore: '0', bScore: '0' };
+async function monitorGame(page, gameNumber, initialCards) {
+    let lastCards = initialCards || { player: [], banker: [], pScore: '0', bScore: '0' };
     
     while (true) {
         const cards = await getCards(page);
@@ -152,22 +157,34 @@ async function monitorGame(page, gameNumber) {
         });
         
         if (isGameOver) {
-            const cards = await getCards(page);
+            let finalCards = cards;
             
-            if (cards.player.length > 0 || cards.banker.length > 0) {
-                console.log('Игра завершена, отправляю результат...');
+            // Если карт нет, пробуем прочитать ещё раз через секунду
+            if (finalCards.player.length === 0 && finalCards.banker.length === 0) {
+                console.log('⚠️ Карты не найдены, пробую ещё раз...');
+                await page.waitForTimeout(1000);
+                finalCards = await getCards(page);
+            }
+            
+            // Если всё ещё нет карт, используем lastCards
+            if (finalCards.player.length === 0 && finalCards.banker.length === 0) {
+                finalCards = lastCards;
+            }
+            
+            if (finalCards.player.length > 0 || finalCards.banker.length > 0) {
+                console.log('🏁 Игра завершена, отправляю результат...');
                 
-                const total = parseInt(cards.pScore) + parseInt(cards.bScore);
-                const winner = cards.pScore > cards.bScore ? 'П1' : (cards.bScore > cards.pScore ? 'П2' : 'X');
-                const noDrawFlag = cards.player.length === 2 && cards.banker.length === 2 ? '#R ' : '';
+                const total = parseInt(finalCards.pScore) + parseInt(finalCards.bScore);
+                const winner = finalCards.pScore > finalCards.bScore ? 'П1' : (finalCards.bScore > finalCards.pScore ? 'П2' : 'X');
+                const noDrawFlag = finalCards.player.length === 2 && finalCards.banker.length === 2 ? '#R ' : '';
                 
                 let message;
-                if (cards.pScore > cards.bScore) {
-                    message = `#N${gameNumber} ✅${cards.pScore} (${formatCards(cards.player)}) - ${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
-                } else if (cards.bScore > cards.pScore) {
-                    message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) - ✅${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
+                if (finalCards.pScore > finalCards.bScore) {
+                    message = `#N${gameNumber} ✅${finalCards.pScore} (${formatCards(finalCards.player)}) - ${finalCards.bScore} (${formatCards(finalCards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
+                } else if (finalCards.bScore > finalCards.pScore) {
+                    message = `#N${gameNumber} ${finalCards.pScore} (${formatCards(finalCards.player)}) - ✅${finalCards.bScore} (${formatCards(finalCards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
                 } else {
-                    message = `#N${gameNumber} ${cards.pScore} (${formatCards(cards.player)}) 🔰 ${cards.bScore} (${formatCards(cards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
+                    message = `#N${gameNumber} ${finalCards.pScore} (${formatCards(finalCards.player)}) 🔰 ${finalCards.bScore} (${formatCards(finalCards.banker)}) ${noDrawFlag}#${winner} #T${total}`;
                 }
                 
                 await sendOrEditTelegram(message);
@@ -206,7 +223,6 @@ async function monitorGame(page, gameNumber) {
     }
 }
 
-// ===== ОСНОВНАЯ ФУНКЦИЯ =====
 async function run() {
     let browser;
     let timeout;
@@ -218,7 +234,6 @@ async function run() {
         browser = await chromium.launch({ headless: true });
         const page = await browser.newPage();
         
-        // Таймаут 60 секунд (ровно 1 минута)
         timeout = setTimeout(async () => {
             console.log(`⏱ 1 минута прошла, закрываю браузер`);
             if (browser) await browser.close();
@@ -247,7 +262,7 @@ async function run() {
         await page.click(`a[href="${activeLink}"]`);
         await page.waitForTimeout(3000);
         
-        // ПОЛУЧАЕМ НОМЕР ПО МОСКОВСКОМУ ВРЕМЕНИ (с коррекцией)
+        // ПОЛУЧАЕМ НОМЕР ПО МОСКОВСКОМУ ВРЕМЕНИ
         let gameNumber = getGameNumberByTime();
         
         if (!gameNumber) {
@@ -261,16 +276,24 @@ async function run() {
         lastGameNumber = gameNumber;
         fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
         
-        let attemptsCards = 0;
+        // Ждем появления карт с принудительным чтением
+        let cardsAttempts = 0;
         let cards = { player: [], banker: [] };
-        while (attemptsCards < 12 && (cards.player.length === 0 || cards.banker.length === 0)) {
+        while (cardsAttempts < 12 && (cards.player.length === 0 || cards.banker.length === 0)) {
             await page.waitForTimeout(5000);
             cards = await getCards(page);
-            attemptsCards++;
+            cardsAttempts++;
         }
         
-        if (cards.player.length > 0 && cards.banker.length > 0) {
-            await monitorGame(page, gameNumber);
+        // Сохраняем начальные карты (даже если их нет)
+        const initialCards = cards;
+        
+        if (cards.player.length > 0 || cards.banker.length > 0) {
+            console.log('🎮 Карты найдены, начинаю мониторинг');
+            await monitorGame(page, gameNumber, initialCards);
+        } else {
+            console.log('⚠️ Карты не появились за 12 попыток, но пробуем мониторинг с lastCards');
+            await monitorGame(page, gameNumber, initialCards);
         }
         
     } catch (e) {
@@ -286,7 +309,7 @@ async function run() {
     }
 }
 
-// ===== ЗАДЕРЖКА ДО СЛЕДУЮЩЕЙ СЕКУНДЫ :02 =====
+// ===== ЗАДЕРЖКА ДО :02 =====
 function getDelayToNextGame() {
     const now = new Date();
     const seconds = now.getSeconds();
@@ -310,7 +333,6 @@ function getDelayToNextGame() {
     console.log('⏱ Время жизни браузера: 1 минута');
     console.log('⏱ Запуск в :02 каждой минуты');
     
-    // Синхронизация с ближайшей :02
     const initialDelay = getDelayToNextGame();
     const nextRunTime = new Date(Date.now() + initialDelay);
     console.log(`⏱ Первый запуск через ${(initialDelay/1000).toFixed(3)} секунд`);
@@ -323,8 +345,8 @@ function getDelayToNextGame() {
         const now = new Date();
         console.log(`\n🚀 Запуск браузера в ${now.toLocaleTimeString()}.${now.getMilliseconds()}`);
         
-        run(); // не ждем завершения
+        run();
         
-        await new Promise(resolve => setTimeout(resolve, 60000)); // 60 секунд
+        await new Promise(resolve => setTimeout(resolve, 60000));
     }
 })();
