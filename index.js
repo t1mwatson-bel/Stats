@@ -222,7 +222,6 @@ async function getCards(page) {
     return { player, banker, pScore, bScore };
 }
 
-// ===== МОНИТОРИНГ С ЗАЩИТОЙ =====
 async function monitorGame(page, gameNumber, tableId) {
     console.log(`🎮 Мониторинг игры #${gameNumber} (стол ${tableId})`);
     
@@ -310,7 +309,6 @@ async function monitorGame(page, gameNumber, tableId) {
     }
 }
 
-// ===== ОСНОВНАЯ ФУНКЦИЯ =====
 async function run() {
     const browserId = Math.floor(Math.random() * 1000);
     let browser;
@@ -321,14 +319,23 @@ async function run() {
     try {
         console.log(`\n🟢 Браузер ${browserId} открыт в ${new Date().toLocaleTimeString()}.${new Date().getMilliseconds()}`);
         
+        // Исправленный launch с дополнительными флагами
         browser = await chromium.launch({ 
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--disable-software-rasterizer',
+                '--disable-features=VizDisplayCompositor',
+                '--single-process'
+            ]
         });
         
         const page = await browser.newPage();
         
-        // Таймер на 4 минуты
         timeout = setTimeout(async () => {
             console.log(`⏱ Браузер ${browserId} завершает работу (4 минуты)`);
             if (currentTableId) {
@@ -339,15 +346,13 @@ async function run() {
             }
         }, 240000);
         
-        // Загрузка страницы с таймаутом
         try {
-            await page.goto(URL, { timeout: 30000 });
+            await page.goto(URL, { timeout: 30000, waitUntil: 'domcontentloaded' });
         } catch (e) {
             console.log(`❌ Ошибка загрузки страницы:`, e.message);
             return;
         }
         
-        // Поиск стола
         const tableInfo = await findFreeGameWithSmallestTimer(page, browserId);
         if (!tableInfo) {
             console.log(`❌ Браузер ${browserId} не нашел свободных столов`);
@@ -364,7 +369,6 @@ async function run() {
             return;
         }
         
-        // Получаем номер игры
         let gameNumber = getGameNumberByTime();
         if (!gameNumber) {
             console.log('⏰ До начала игр еще время');
@@ -377,7 +381,6 @@ async function run() {
         lastGameNumber = gameNumber;
         fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
         
-        // Ждем карты
         let cardsAttempts = 0;
         let cards = { player: [], banker: [], pScore: '0', bScore: '0' };
         
@@ -426,7 +429,6 @@ function getDelayTo58() {
     return (delaySeconds * 1000) - milliseconds;
 }
 
-// ===== ЗАПУСК =====
 (async () => {
     console.log('🤖 Бот Baccarat запущен');
     console.log('🎯 Беру СВОБОДНЫЙ стол с НАИМЕНЬШИМ таймером');
