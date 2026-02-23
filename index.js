@@ -11,9 +11,8 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 
 let lastMessageId = null;
 let lastMessageText = '';
-
-// Загружаем последний номер из файла (на всякий случай)
 let lastGameNumber = '0';
+
 if (fs.existsSync(LAST_NUMBER_FILE)) {
     lastGameNumber = fs.readFileSync(LAST_NUMBER_FILE, 'utf8');
     console.log('Загружен последний номер:', lastGameNumber);
@@ -33,26 +32,27 @@ function determineTurn(playerCards, bankerCards) {
 // Номер игры по московскому времени (старт в 3:00)
 function getGameNumberByTime() {
     const now = new Date();
-    
-    // Переводим в московское время (UTC+3)
     const mskTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Moscow' }));
     
     const currentHours = mskTime.getHours();
     const currentMinutes = mskTime.getMinutes();
+    const currentSeconds = mskTime.getSeconds();
     
-    // Начало отсчета: 3:00 МСК
     const startHour = 3;
     const startMinute = 0;
     
-    // Если сейчас меньше 3:00, значит игры еще не начались
     if (currentHours < startHour || (currentHours === startHour && currentMinutes < startMinute)) {
         return null;
     }
     
-    // Считаем сколько минут прошло с 3:00
-    const minutesSinceStart = (currentHours - startHour) * 60 + (currentMinutes - startMinute);
+    // Считаем минуты с 3:00
+    let minutesSinceStart = (currentHours - startHour) * 60 + (currentMinutes - startMinute);
     
-    // Номер игры = минуты с начала + 1
+    // Если секунды меньше 5, значит игра еще не началась, номер относится к предыдущей минуте
+    if (currentSeconds < 5) {
+        minutesSinceStart -= 1;
+    }
+    
     return minutesSinceStart + 1;
 }
 
@@ -144,7 +144,6 @@ async function monitorGame(page, gameNumber) {
     while (true) {
         const cards = await getCards(page);
         
-        // Проверка на завершение игры через селектор
         const isGameOver = await page.evaluate(() => {
             const panel = document.querySelector('.market-grid__game-over-panel');
             if (!panel) return false;
@@ -207,22 +206,23 @@ async function monitorGame(page, gameNumber) {
     }
 }
 
+// ===== ОСНОВНАЯ ФУНКЦИЯ =====
 async function run() {
     let browser;
     let timeout;
+    const startTime = Date.now();
     
     try {
-        const startTime = new Date();
-        console.log(`\n🟢 Браузер открыт в ${startTime.toLocaleTimeString()}.${startTime.getMilliseconds()}`);
+        console.log(`\n🟢 Браузер открыт в ${new Date().toLocaleTimeString()}.${new Date().getMilliseconds()}`);
         
         browser = await chromium.launch({ headless: true });
         const page = await browser.newPage();
         
-        // Таймаут 2 минуты
+        // Таймаут 60 секунд (ровно 1 минута)
         timeout = setTimeout(async () => {
-            console.log(`⏱ 2 минуты прошло, закрываю браузер`);
+            console.log(`⏱ 1 минута прошла, закрываю браузер`);
             if (browser) await browser.close();
-        }, 120000);
+        }, 60000);
         
         await page.goto(URL);
         console.log('Ищем активный стол...');
@@ -247,7 +247,7 @@ async function run() {
         await page.click(`a[href="${activeLink}"]`);
         await page.waitForTimeout(3000);
         
-        // ПОЛУЧАЕМ НОМЕР ПО МОСКОВСКОМУ ВРЕМЕНИ
+        // ПОЛУЧАЕМ НОМЕР ПО МОСКОВСКОМУ ВРЕМЕНИ (с коррекцией)
         let gameNumber = getGameNumberByTime();
         
         if (!gameNumber) {
@@ -258,7 +258,6 @@ async function run() {
         console.log('🎰 Номер игры по времени (МСК):', gameNumber);
         gameNumber = gameNumber.toString();
         
-        // Сохраняем номер в файл (на всякий случай)
         lastGameNumber = gameNumber;
         fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
         
@@ -280,13 +279,14 @@ async function run() {
         if (timeout) clearTimeout(timeout);
         if (browser) {
             await browser.close();
+            console.log(`🔴 Браузер закрыт в ${new Date().toLocaleTimeString()}.${new Date().getMilliseconds()}, прожил ${(Date.now() - startTime)/1000} сек`);
             lastMessageId = null;
             lastMessageText = '';
         }
     }
 }
 
-// Функция для расчета задержки до запуска браузера в :02 секунд
+// ===== ЗАДЕРЖКА ДО СЛЕДУЮЩЕЙ СЕКУНДЫ :02 =====
 function getDelayToNextGame() {
     const now = new Date();
     const seconds = now.getSeconds();
@@ -303,21 +303,21 @@ function getDelayToNextGame() {
     return (delaySeconds * 1000) - milliseconds;
 }
 
-// Запуск с интервалом 35 секунд
+// ===== ЗАПУСК =====
 (async () => {
     console.log('🤖 Бот Baccarat запущен');
     console.log('🎯 Номера игр по московскому времени (3:00 = #1)');
-    console.log('⏱ Время жизни браузера: 2 минуты');
-    console.log('⏱ Интервал запуска: 35 секунд');
+    console.log('⏱ Время жизни браузера: 1 минута');
+    console.log('⏱ Запуск в :02 каждой минуты');
     
-    // Синхронизация с ближайшей игрой
+    // Синхронизация с ближайшей :02
     const initialDelay = getDelayToNextGame();
     const nextRunTime = new Date(Date.now() + initialDelay);
-    console.log(`⏱ Синхронизация: первый запуск через ${(initialDelay/1000).toFixed(3)} секунд`);
+    console.log(`⏱ Первый запуск через ${(initialDelay/1000).toFixed(3)} секунд`);
     console.log(`⏱ Время первого запуска: ${nextRunTime.toLocaleTimeString()}.${nextRunTime.getMilliseconds()}`);
     
     await new Promise(resolve => setTimeout(resolve, initialDelay));
-    console.log('✅ Синхронизировались!');
+    console.log('✅ Синхронизировались! Запуск каждые 60 секунд');
     
     while (true) {
         const now = new Date();
@@ -325,6 +325,6 @@ function getDelayToNextGame() {
         
         run(); // не ждем завершения
         
-        await new Promise(resolve => setTimeout(resolve, 35000)); // 35 секунд
+        await new Promise(resolve => setTimeout(resolve, 60000)); // 60 секунд
     }
 })();
