@@ -29,7 +29,6 @@ function determineTurn(playerCards, bankerCards) {
     return null;
 }
 
-// Номер игры по московскому времени (старт в 3:00)
 function getGameNumberByTime() {
     const now = new Date();
     const mskTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Moscow' }));
@@ -47,7 +46,6 @@ function getGameNumberByTime() {
     
     let minutesSinceStart = (currentHours - startHour) * 60 + (currentMinutes - startMinute);
     
-    // Коррекция для игр, которые начались менее 5 секунд назад
     if (currentSeconds < 5) {
         minutesSinceStart -= 1;
     }
@@ -69,21 +67,11 @@ async function sendOrEditTelegram(newMessage) {
             lastMessageId = msg.message_id;
         }
         lastMessageText = newMessage;
-        console.log('✅ Сообщение отправлено/обновлено');
     } catch (e) {
-        console.log('❌ TG error:', e.message);
-        try {
-            const msg = await bot.sendMessage(CHAT, newMessage);
-            lastMessageId = msg.message_id;
-            lastMessageText = newMessage;
-            console.log('✅ Отправлено новое сообщение');
-        } catch (sendError) {
-            console.log('❌ Критическая ошибка TG:', sendError.message);
-        }
+        console.log('TG error:', e.message);
     }
 }
 
-// Поиск первого активного стола
 async function findFirstLiveGame(page) {
     const games = await page.$$('.dashboard-game');
     for (const game of games) {
@@ -163,8 +151,6 @@ async function monitorGame(page, gameNumber) {
             const cards = await getCards(page);
             
             if (cards.player.length > 0 || cards.banker.length > 0) {
-                console.log('🏁 Игра завершена, отправляю результат...');
-                
                 const total = parseInt(cards.pScore) + parseInt(cards.bScore);
                 const winner = cards.pScore > cards.bScore ? 'П1' : (cards.bScore > cards.pScore ? 'П2' : 'X');
                 const noDrawFlag = cards.player.length === 2 && cards.banker.length === 2 ? '#R ' : '';
@@ -181,7 +167,6 @@ async function monitorGame(page, gameNumber) {
                 await sendOrEditTelegram(message);
             }
             
-            console.log('Жду 10 секунд перед закрытием...');
             await page.waitForTimeout(10000);
             break;
         }
@@ -226,61 +211,49 @@ async function run() {
         browser = await chromium.launch({ headless: true });
         const page = await browser.newPage();
         
+        // Жизнь браузера 60 секунд (ровно 1 минута)
         timeout = setTimeout(async () => {
-            console.log(`⏱ 70 секунд прошло, закрываю браузер`);
             if (browser) await browser.close();
-        }, 70000);
+        }, 60000);
         
         await page.goto(URL);
-        console.log('Ищем активный стол...');
         
         let activeLink = null;
         let attempts = 0;
         while (!activeLink && attempts < 10) {
             activeLink = await findFirstLiveGame(page);
             if (!activeLink) {
-                console.log('Жду 5 секунд...');
                 await page.waitForTimeout(5000);
                 attempts++;
             }
         }
         
-        if (!activeLink) {
-            console.log('❌ Не нашел активный стол за 10 попыток');
-            return;
-        }
+        if (!activeLink) return;
         
-        console.log('Захожу в стол:', activeLink);
         await page.click(`a[href="${activeLink}"]`);
-        await page.waitForTimeout(3000);
         
-        // ПОЛУЧАЕМ НОМЕР ПО МОСКОВСКОМУ ВРЕМЕНИ
+        // Ждем либо карты, либо завершение (максимум 5 секунд)
+        await Promise.race([
+            page.waitForSelector('.baccarat-player__cards', { timeout: 5000 }).catch(() => {}),
+            page.waitForSelector('.market-grid__game-over-panel', { timeout: 5000 }).catch(() => {})
+        ]);
+        
         let gameNumber = getGameNumberByTime();
+        if (!gameNumber) return;
         
-        if (!gameNumber) {
-            console.log('⏰ До начала игр еще время (старт в 3:00 МСК)');
-            return;
-        }
-        
-        console.log('🎰 Номер игры по времени (МСК):', gameNumber);
         gameNumber = gameNumber.toString();
-        
         lastGameNumber = gameNumber;
         fs.writeFileSync(LAST_NUMBER_FILE, gameNumber);
         
-        // ===== ВАЖНО: ЧИТАЕМ КАРТЫ СРАЗУ ПОСЛЕ ВХОДА =====
-        console.log('🃏 Читаю начальные карты...');
+        // Сразу читаем карты
         let initialCards = await getCards(page);
-        console.log(`📊 Начальные карты: игрок ${initialCards.pScore} (${initialCards.player.length} карт), дилер ${initialCards.bScore} (${initialCards.banker.length} карт)`);
-
-        // Проверяем, не завершилась ли игра мгновенно (раздача)
+        
+        // Проверяем, не завершилась ли игра
         const gameOverNow = await page.evaluate(() => {
-            const panel = document.querySelector('.market-grid__game-over-panel');
-            return panel !== null;
+            return document.querySelector('.market-grid__game-over-panel') !== null;
         });
 
-        if (gameOverNow) {
-            console.log('⚡ Игра-раздача! Отправляем сразу...');
+        if (gameOverNow && (initialCards.player.length > 0 || initialCards.banker.length > 0)) {
             const total = parseInt(initialCards.pScore) + parseInt(initialCards.bScore);
             const winner = initialCards.pScore > initialCards.bScore ? 'П1' : (initialCards.bScore > initialCards.pScore ? 'П2' : 'X');
             const noDrawFlag = initialCards.player.length === 2 && initialCards.banker.length === 2 ? '#R ' : '';
@@ -296,16 +269,15 @@ async function run() {
             
             await sendOrEditTelegram(message);
             await page.waitForTimeout(10000);
-            return; // Выходим, игра уже обработана
+            return;
         }
         
-        // Если не раздача — продолжаем как обычно
-        let attemptsCards = 0;
+        let cardsAttempts = 0;
         let cards = { player: [], banker: [] };
-        while (attemptsCards < 12 && (cards.player.length === 0 || cards.banker.length === 0)) {
+        while (cardsAttempts < 12 && (cards.player.length === 0 || cards.banker.length === 0)) {
             await page.waitForTimeout(5000);
             cards = await getCards(page);
-            attemptsCards++;
+            cardsAttempts++;
         }
         
         if (cards.player.length > 0 && cards.banker.length > 0) {
@@ -313,24 +285,23 @@ async function run() {
         }
         
     } catch (e) {
-        console.log('❌ Ошибка:', e.message);
+        console.log('Ошибка:', e.message);
     } finally {
         if (timeout) clearTimeout(timeout);
         if (browser) {
             await browser.close();
-            console.log(`🔴 Браузер закрыт в ${new Date().toLocaleTimeString()}.${new Date().getMilliseconds()}, прожил ${(Date.now() - startTime)/1000} сек`);
             lastMessageId = null;
             lastMessageText = '';
         }
     }
 }
 
-// ===== ЗАДЕРЖКА ДО :02 =====
-function getDelayToNextGame() {
+// ===== ЗАДЕРЖКА ДО :58 =====
+function getDelayTo58() {
     const now = new Date();
     const seconds = now.getSeconds();
     const milliseconds = now.getMilliseconds();
-    const targetSeconds = 2;
+    const targetSeconds = 58;
     
     let delaySeconds;
     if (seconds < targetSeconds) {
@@ -345,18 +316,17 @@ function getDelayToNextGame() {
 // ===== ЗАПУСК =====
 (async () => {
     console.log('🤖 Бот Baccarat запущен');
-    console.log('🎯 Номера игр по московскому времени (3:00 = #1)');
-    console.log('⏱ Время жизни браузера: 70 секунд');
-    console.log('⏱ Запуск в :02 каждой минуты');
-    console.log('⚡ Добавлена обработка игр-раздач');
+    console.log('🎯 Номера по московскому времени (3:00 = #1)');
+    console.log('⏱ Запуск в :58 каждой минуты');
+    console.log('⏱ Жизнь браузера: 60 секунд');
     
-    const initialDelay = getDelayToNextGame();
+    const initialDelay = getDelayTo58();
     const nextRunTime = new Date(Date.now() + initialDelay);
     console.log(`⏱ Первый запуск через ${(initialDelay/1000).toFixed(3)} секунд`);
     console.log(`⏱ Время первого запуска: ${nextRunTime.toLocaleTimeString()}.${nextRunTime.getMilliseconds()}`);
     
     await new Promise(resolve => setTimeout(resolve, initialDelay));
-    console.log('✅ Синхронизировались! Запуск каждые 60 секунд');
+    console.log('✅ Синхронизировались!');
     
     while (true) {
         const now = new Date();
@@ -364,6 +334,7 @@ function getDelayToNextGame() {
         
         run();
         
+        // Ждем ровно 60 секунд до следующего :58
         await new Promise(resolve => setTimeout(resolve, 60000));
     }
 })();
