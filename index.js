@@ -80,9 +80,30 @@ async function sendOrEditTelegram(newMessage) {
     }
 }
 
-// ===== ПОИСК ВТОРОГО АКТИВНОГО СТОЛА =====
-async function findSecondLiveGame(page) {
-    console.log('🔍 Ищем активные столы...');
+// ===== ПАРСИНГ ТАЙМЕРА =====
+async function getTimerValue(game) {
+    try {
+        const timerText = await game.$eval('.dashboard-game-info__time', el => el.textContent.trim());
+        console.log(`⏱ Найден таймер: "${timerText}"`);
+        
+        // Таймер может быть в формате "00:30" или "01:15"
+        const match = timerText.match(/(\d+):(\d+)/);
+        if (match) {
+            const minutes = parseInt(match[1]);
+            const seconds = parseInt(match[2]);
+            // Преобразуем в общее количество секунд
+            return minutes * 60 + seconds;
+        }
+    } catch (e) {
+        // Если нет таймера, возвращаем большое число (стол неактивен)
+        return 9999;
+    }
+    return 9999;
+}
+
+// ===== ПОИСК СТОЛА С НАИМЕНЬШИМ ТАЙМЕРОМ =====
+async function findGameWithSmallestTimer(page) {
+    console.log('🔍 Ищем стол с наименьшим таймером...');
     
     const games = await page.$$('.dashboard-game');
     console.log(`Найдено столов: ${games.length}`);
@@ -104,21 +125,24 @@ async function findSecondLiveGame(page) {
             const link = await game.$('a[href*="/ru/live/baccarat/"]');
             if (link) {
                 const href = await link.getAttribute('href');
-                activeGames.push({ index: i, href });
-                console.log(`✅ Активный стол #${activeGames.length} (позиция ${i+1})`);
+                const timerSeconds = await getTimerValue(game);
+                
+                activeGames.push({
+                    index: i,
+                    href,
+                    timer: timerSeconds
+                });
+                
+                console.log(`📊 Стол ${i+1}: таймер ${timerSeconds} сек`);
             }
         }
     }
     
-    // Берем ВТОРОЙ активный стол
-    if (activeGames.length >= 2) {
-        console.log(`🎯 Беру второй активный стол (позиция ${activeGames[1].index + 1})`);
-        return activeGames[1].href;
-    }
+    // Сортируем по таймеру (от меньшего к большему)
+    activeGames.sort((a, b) => a.timer - b.timer);
     
-    // Если меньше двух - берем первый
-    if (activeGames.length === 1) {
-        console.log(`⚠️ Только один активный стол, беру его`);
+    if (activeGames.length > 0) {
+        console.log(`🎯 Выбран стол с наименьшим таймером: ${activeGames[0].timer} сек (позиция ${activeGames[0].index + 1})`);
         return activeGames[0].href;
     }
     
@@ -255,11 +279,11 @@ async function run() {
         
         await page.goto(URL);
         
-        // Ищем ВТОРОЙ активный стол
+        // Ищем стол с НАИМЕНЬШИМ ТАЙМЕРОМ
         let activeLink = null;
         let attempts = 0;
         while (!activeLink && attempts < 10) {
-            activeLink = await findSecondLiveGame(page);
+            activeLink = await findGameWithSmallestTimer(page);
             if (!activeLink) {
                 console.log('Жду 5 секунд...');
                 await page.waitForTimeout(5000);
@@ -339,7 +363,7 @@ function getDelayTo58() {
 // ===== ЗАПУСК =====
 (async () => {
     console.log('🤖 Бот Baccarat запущен');
-    console.log('🎯 Беру ВТОРОЙ активный стол');
+    console.log('🎯 Беру стол с НАИМЕНЬШИМ ТАЙМЕРОМ');
     console.log('⏱ Запуск в :58 каждой минуты');
     console.log('⏱ Жизнь браузера: 4 минуты');
     
