@@ -460,6 +460,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     original_text = message.text or ""
     source_message_id = message.message_id
+    
+    # ===== НОВАЯ ПРОВЕРКА ПО ВРЕМЕНИ =====
+    # Игнорируем сообщения старше 1 часа
+    message_time = message.date.replace(tzinfo=None)
+    one_hour_ago = datetime.now() - timedelta(hours=1)
+
+    if message_time < one_hour_ago:
+        logger.info(f"⏰ Пропускаю старое сообщение от {message_time}")
+        return
+    # ===== КОНЕЦ ПРОВЕРКИ =====
 
     # === ✅ ШАГ 1: ЗЕРКАЛИРОВАНИЕ ===
     enhanced_text = add_32_indicator(original_text)
