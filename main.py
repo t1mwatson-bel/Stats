@@ -15,6 +15,32 @@ print("🃏 ПАРСЕР 21 ОЧКО (ВСЕ СТОЛЫ) - ЗАПУСК", flush=
 print("=" * 60, flush=True)
 
 # =====================================================================
+# ТЕСТ ДОСТУПА К API
+# =====================================================================
+print("🧪 Тест доступа к API...", flush=True)
+try:
+    r = requests.get("https://1xlite-84484.pro", timeout=10)
+    print(f"📡 Статус (сайт): {r.status_code}", flush=True)
+except Exception as e:
+    print(f"❌ Ошибка доступа к сайту: {e}", flush=True)
+
+# Тест API 21 очка
+print("🧪 Тест API 21 очка...", flush=True)
+test_url = "https://1xlite-84484.pro/service-api/LiveFeed/Get1x2_VZip?sports=146&champs=1643503&count=10&gr=2336&mode=4&country=190&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
+try:
+    r = requests.get(test_url, timeout=10)
+    print(f"📡 Статус API: {r.status_code}", flush=True)
+    if r.status_code == 200:
+        data = r.json()
+        print(f"📊 Ключи: {data.keys() if data else 'нет данных'}", flush=True)
+        print(f"📊 Value: {len(data.get('Value', []))} объектов", flush=True)
+    else:
+        print(f"⚠️ Ответ: {r.text[:200] if r.text else 'пусто'}", flush=True)
+except Exception as e:
+    print(f"❌ Ошибка API: {e}", flush=True)
+# =====================================================================
+
+# =====================================================================
 # НАСТРОЙКИ
 # =====================================================================
 BOT_TOKEN = "5482422004:AAEKX1vcjzGbCYFrRL1MqKj4VymTGYwN7-c"
@@ -49,22 +75,27 @@ def get_game_number():
     diff_minutes = (now - start).total_seconds() / 60
     return int(diff_minutes) % 1440 + 1
 
-print("✅ Функции загружены", flush=True)
-
 def get_all_game_ids():
     try:
-        lobby_url = "https://1xlite-84484.pro/ru/live/twentyone"
-        print(f"🔍 Запрос к лобби: {lobby_url}", flush=True)
-        response = requests.get(lobby_url, headers=HEADERS, timeout=10)
-        print(f"📡 Статус лобби: {response.status_code}", flush=True)
+        url = "https://1xlite-84484.pro/service-api/LiveFeed/Get1x2_VZip?sports=146&champs=1643503&count=40&gr=2336&mode=4&country=190&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
+        print(f"🔍 Запрос к API: {url[:80]}...", flush=True)
+        response = requests.get(url, headers=HEADERS, timeout=10)
+        print(f"📡 Статус API (игры): {response.status_code}", flush=True)
         if response.status_code != 200:
             return []
-        pattern = r'/twentyone/(\d+)'
-        matches = re.findall(pattern, response.text)
-        print(f"🔍 Найдено ID в лобби: {len(matches)}", flush=True)
-        return list(set(matches)) if matches else []
+        data = response.json()
+        games = data.get("Value", [])
+        print(f"🔍 Найдено игр в ответе: {len(games)}", flush=True)
+        ids = []
+        for game in games:
+            if game.get("I"):
+                ids.append(str(game.get("I")))
+            elif game.get("DI"):
+                ids.append(str(game.get("DI")))
+        print(f"🔍 Извлечено ID: {len(ids)}", flush=True)
+        return ids
     except Exception as e:
-        print(f"❌ Ошибка лобби: {e}", flush=True)
+        print(f"❌ Ошибка получения ID: {e}", flush=True)
         return []
 
 def get_game_data(game_id):
@@ -171,7 +202,7 @@ def parse_all_tables():
     
     game_ids = get_all_game_ids()
     if not game_ids:
-        print("⚠️ Нет активных игр", flush=True)
+        print("⚠️ Нет активных игр или ошибка получения ID", flush=True)
         return
     
     print(f"🔍 Найдено столов: {len(game_ids)}", flush=True)
