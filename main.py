@@ -11,34 +11,8 @@ import sys
 # =====================================================================
 sys.stdout.flush()
 print("=" * 60, flush=True)
-print("🃏 ПАРСЕР 21 ОЧКО (ВСЕ СТОЛЫ) - ЗАПУСК", flush=True)
+print("🃏 ПАРСЕР 21 ОЧКО (CLASSIC) - ЗАПУСК", flush=True)
 print("=" * 60, flush=True)
-
-# =====================================================================
-# ТЕСТ ДОСТУПА К API
-# =====================================================================
-print("🧪 Тест доступа к API...", flush=True)
-try:
-    r = requests.get("https://1xlite-84484.pro", timeout=10)
-    print(f"📡 Статус (сайт): {r.status_code}", flush=True)
-except Exception as e:
-    print(f"❌ Ошибка доступа к сайту: {e}", flush=True)
-
-# Тест API 21 очка
-print("🧪 Тест API 21 очка...", flush=True)
-test_url = "https://1xlite-84484.pro/service-api/LiveFeed/Get1x2_VZip?sports=146&champs=1643503&count=10&gr=2336&mode=4&country=190&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
-try:
-    r = requests.get(test_url, timeout=10)
-    print(f"📡 Статус API: {r.status_code}", flush=True)
-    if r.status_code == 200:
-        data = r.json()
-        print(f"📊 Ключи: {data.keys() if data else 'нет данных'}", flush=True)
-        print(f"📊 Value: {len(data.get('Value', []))} объектов", flush=True)
-    else:
-        print(f"⚠️ Ответ: {r.text[:200] if r.text else 'пусто'}", flush=True)
-except Exception as e:
-    print(f"❌ Ошибка API: {e}", flush=True)
-# =====================================================================
 
 # =====================================================================
 # НАСТРОЙКИ
@@ -68,35 +42,38 @@ print("✅ Настройки загружены", flush=True)
 # ФУНКЦИИ
 # =====================================================================
 def get_game_number():
+    """Номер игры от 1 до 720 (игры каждые 2 минуты, старт в 03:00)"""
     now = datetime.now(MOSCOW_TZ)
     start = now.replace(hour=3, minute=0, second=0, microsecond=0)
     if now < start:
         start = start - timedelta(days=1)
     diff_minutes = (now - start).total_seconds() / 60
-    return int(diff_minutes) % 1440 + 1
+    game_number = int(diff_minutes / 2) % 720 + 1
+    return game_number
 
-def get_all_game_ids():
+def get_active_game_id():
+    """Получает ID активной игры со страницы лобби"""
     try:
-        url = "https://1xlite-84484.pro/service-api/LiveFeed/Get1x2_VZip?sports=146&champs=1643503&count=40&gr=2336&mode=4&country=190&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
-        print(f"🔍 Запрос к API: {url[:80]}...", flush=True)
-        response = requests.get(url, headers=HEADERS, timeout=10)
-        print(f"📡 Статус API (игры): {response.status_code}", flush=True)
+        lobby_url = "https://1xlite-84484.pro/ru/live/twentyone/2092323-21-classics"
+        print(f"🔍 Запрос к лобби: {lobby_url}", flush=True)
+        response = requests.get(lobby_url, headers=HEADERS, timeout=10)
+        print(f"📡 Статус лобби: {response.status_code}", flush=True)
         if response.status_code != 200:
-            return []
-        data = response.json()
-        games = data.get("Value", [])
-        print(f"🔍 Найдено игр в ответе: {len(games)}", flush=True)
-        ids = []
-        for game in games:
-            if game.get("I"):
-                ids.append(str(game.get("I")))
-            elif game.get("DI"):
-                ids.append(str(game.get("DI")))
-        print(f"🔍 Извлечено ID: {len(ids)}", flush=True)
-        return ids
+            return None
+        
+        # Ищем ID игры в формате /twentyone/2092323-21-classics/ЧИСЛО-player-dealer
+        pattern = r'/twentyone/2092323-21-classics/(\d+)-player-dealer'
+        match = re.search(pattern, response.text)
+        if match:
+            game_id = match.group(1)
+            print(f"✅ Найден активный ID игры: {game_id}", flush=True)
+            return game_id
+        else:
+            print("⚠️ ID игры не найден на странице", flush=True)
+            return None
     except Exception as e:
-        print(f"❌ Ошибка получения ID: {e}", flush=True)
-        return []
+        print(f"❌ Ошибка получения ID игры: {e}", flush=True)
+        return None
 
 def get_game_data(game_id):
     url = f"https://1xlite-84484.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=7&topGroups=&country=190&marketType=1&isNewBuilder=true"
@@ -192,65 +169,79 @@ def edit_message(message_id, text):
         print(f"❌ Ошибка редактирования: {e}", flush=True)
         return False
 
+def wait_for_start():
+    """Ждёт :58 секунду нечётной минуты (игры каждые 2 минуты)"""
+    while True:
+        now = datetime.now(MOSCOW_TZ)
+        if now.second == 58 and now.minute % 2 == 1:
+            return time.time()
+        time.sleep(0.1)
+
+def get_close_time():
+    """Возвращает время ближайшего :52 нечётной минуты"""
+    now = datetime.now(MOSCOW_TZ)
+    if now.minute % 2 == 1 and now.second >= 52:
+        close = now.replace(minute=now.minute + 2, second=52, microsecond=0)
+    elif now.minute % 2 == 1:
+        close = now.replace(second=52, microsecond=0)
+    else:
+        close = now.replace(minute=now.minute + 1, second=52, microsecond=0)
+    return close.timestamp()
+
 # =====================================================================
-# ГЛАВНЫЙ ЦИКЛ
+# ОСНОВНОЙ ЦИКЛ
 # =====================================================================
 def parse_all_tables():
     global messages, game_cache
     
-    print("🔄 Начинаю парсинг всех столов...", flush=True)
+    print("🔄 Начинаю парсинг...", flush=True)
     
-    game_ids = get_all_game_ids()
-    if not game_ids:
-        print("⚠️ Нет активных игр или ошибка получения ID", flush=True)
+    game_id = get_active_game_id()
+    if not game_id:
+        print("⚠️ Активная игра не найдена", flush=True)
         return
     
-    print(f"🔍 Найдено столов: {len(game_ids)}", flush=True)
+    print(f"🔍 Обработка стола: {game_id}", flush=True)
+    data = get_game_data(game_id)
+    if not data:
+        return
     
-    for game_id in game_ids:
-        print(f"📊 Обработка стола: {game_id}", flush=True)
-        data = get_game_data(game_id)
-        if not data:
-            continue
-        
-        value = data.get("Value", {})
-        sc = value.get("SC", {})
-        
-        player_cards = []
-        dealer_cards = []
-        state = None
-        
-        for item in sc.get("S", []):
-            if item.get("Key") == "P1":
-                player_cards = json.loads(item.get("Value", "[]"))
-            if item.get("Key") == "P2":
-                dealer_cards = json.loads(item.get("Value", "[]"))
-            if item.get("Key") == "STATE":
-                state = item.get("Value")
-        
-        if not player_cards:
-            print(f"⏭️ Нет карт игрока в {game_id}", flush=True)
-            continue
-        
-        if game_id not in game_cache:
-            game_cache[game_id] = get_game_number()
-        
-        game_num = game_cache[game_id]
-        
-        p_score = calculate_score(player_cards)
-        d_score = calculate_score(dealer_cards) if dealer_cards else 0
-        
-        msg = build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
-        print(f"📤 {msg}", flush=True)
-        
-        if game_id in messages:
-            edit_message(messages[game_id], msg)
-        else:
-            msg_id = send_message(msg)
-            if msg_id:
-                messages[game_id] = msg_id
-        
-        time.sleep(0.3)
+    value = data.get("Value", {})
+    sc = value.get("SC", {})
+    
+    player_cards = []
+    dealer_cards = []
+    state = None
+    
+    for item in sc.get("S", []):
+        if item.get("Key") == "P1":
+            player_cards = json.loads(item.get("Value", "[]"))
+        if item.get("Key") == "P2":
+            dealer_cards = json.loads(item.get("Value", "[]"))
+        if item.get("Key") == "STATE":
+            state = item.get("Value")
+    
+    if not player_cards:
+        print(f"⏭️ Нет карт игрока в {game_id}", flush=True)
+        return
+    
+    if game_id not in game_cache:
+        game_cache[game_id] = get_game_number()
+    
+    game_num = game_cache[game_id]
+    
+    p_score = calculate_score(player_cards)
+    d_score = calculate_score(dealer_cards) if dealer_cards else 0
+    
+    msg = build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
+    print(f"📤 {msg}", flush=True)
+    
+    if game_id in messages:
+        edit_message(messages[game_id], msg)
+    else:
+        msg_id = send_message(msg)
+        if msg_id:
+            messages[game_id] = msg_id
 
 # =====================================================================
 # ЗАПУСК
@@ -258,14 +249,110 @@ def parse_all_tables():
 if __name__ == "__main__":
     print("🔄 Основной цикл запущен", flush=True)
     
+    processed_games = set()
+    
     while True:
         try:
-            parse_all_tables()
-            print("💤 Ожидание 30 секунд...", flush=True)
-            time.sleep(30)
-        except KeyboardInterrupt:
-            print("\n🛑 Остановлен пользователем", flush=True)
-            break
+            start_time = wait_for_start()
+            print(f"🕐 Старт в {datetime.fromtimestamp(start_time).strftime('%H:%M:%S')}", flush=True)
+            
+            close_time = get_close_time()
+            print(f"🕐 Закрытие в {datetime.fromtimestamp(close_time).strftime('%H:%M:%S')}", flush=True)
+            
+            time.sleep(2)
+            
+            game_id = None
+            print("🔍 Поиск игры...", flush=True)
+            for _ in range(10):
+                any_id = get_active_game_id()
+                if any_id:
+                    if any_id not in processed_games:
+                        game_id = any_id
+                        processed_games.add(game_id)
+                        print(f"✅ Найдена игра: {game_id}", flush=True)
+                        break
+                    else:
+                        print(f"⏭️ Игра {any_id} уже обработана", flush=True)
+                time.sleep(0.5)
+            
+            if not game_id:
+                print("❌ Игра не найдена, перезапуск...", flush=True)
+                continue
+            
+            url = f"https://1xlite-84484.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=7&topGroups=&country=190&marketType=1&isNewBuilder=true"
+            
+            game_started = False
+            last_message_id = None
+            last_player_cards = ""
+            last_dealer_cards = ""
+            game_number = 0
+            
+            while time.time() < close_time:
+                try:
+                    response = requests.get(url, headers=HEADERS, timeout=5)
+                    if response.status_code == 200:
+                        data = response.json()
+                        sc = data.get("Value", {}).get("SC", {})
+                        
+                        player_cards = []
+                        dealer_cards = []
+                        state = None
+                        
+                        for item in sc.get("S", []):
+                            if item.get("Key") == "P1":
+                                player_cards = json.loads(item.get("Value", "[]"))
+                            if item.get("Key") == "P2":
+                                dealer_cards = json.loads(item.get("Value", "[]"))
+                            if item.get("Key") == "STATE":
+                                state = item.get("Value")
+                        
+                        if player_cards:
+                            if not game_started:
+                                game_started = True
+                                game_number = get_game_number()
+                                
+                                p_score = calculate_score(player_cards)
+                                d_score = calculate_score(dealer_cards) if dealer_cards else 0
+                                
+                                p_hand = format_cards(player_cards)
+                                d_hand = format_cards(dealer_cards) if dealer_cards else ""
+                                total = p_score + d_score if dealer_cards else p_score
+                                arrow = "◀️" if not dealer_cards else "▶️"
+                                
+                                msg = f"#N{game_number}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
+                                last_message_id = send_message(msg)
+                                print(f"🎯 Старт: {msg}", flush=True)
+                                continue
+                            
+                            p_score = calculate_score(player_cards)
+                            d_score = calculate_score(dealer_cards) if dealer_cards else 0
+                            p_hand = format_cards(player_cards)
+                            d_hand = format_cards(dealer_cards) if dealer_cards else ""
+                            total = p_score + d_score if dealer_cards else p_score
+                            arrow = "◀️" if not dealer_cards else "▶️"
+                            
+                            msg = f"#N{game_number}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
+                            if last_message_id:
+                                edit_message(last_message_id, msg)
+                            else:
+                                last_message_id = send_message(msg)
+                            print(f"🔄 {msg}", flush=True)
+                    
+                    time.sleep(0.3)
+                    
+                except requests.exceptions.Timeout:
+                    print("⏱️ Таймаут запроса, продолжаем...", flush=True)
+                    continue
+                except Exception as e:
+                    print(f"❌ Сбой: {e}", flush=True)
+                    time.sleep(3)
+                    break
+            
+            print("⏰ Время работы истекло, перезапуск...", flush=True)
+            
         except Exception as e:
-            print(f"❌ Ошибка: {e}", flush=True)
+            print(f"❌ Критическая ошибка: {e}", flush=True)
             time.sleep(5)
+
+if __name__ == "__main__":
+    main()
