@@ -11,7 +11,7 @@ import sys
 # =====================================================================
 sys.stdout.flush()
 print("=" * 60, flush=True)
-print("🃏 ПАРСЕР 21 ОЧКО (ОБЫЧНАЯ) - ЗАПУСК", flush=True)
+print("🃏 ПАРСЕР 21 ОЧКО (CLASSIC) - ЗАПУСК", flush=True)
 print("=" * 60, flush=True)
 
 # =====================================================================
@@ -32,7 +32,7 @@ RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://1xlite-84484.pro/ru/live/twentyone",
+    "Referer": "https://1xlite-84484.pro/ru/live/twentyone/2092323-21-classics",
     "Cookie": "platform_type=desktop; SESSION=ca67837679e0e6d35d1b1baf235c2dff; lng=ru; _ga=GA1.1.185468893.1785072152"
 }
 
@@ -52,17 +52,16 @@ def get_game_number():
     return game_number
 
 def get_active_game_id():
-    """Получает ID активной игры со страницы обычной 21"""
+    """Получает ID активной игры со страницы CLASSIC"""
     try:
-        lobby_url = "https://1xlite-84484.pro/ru/live/twentyone"
+        lobby_url = "https://1xlite-84484.pro/ru/live/twentyone/2092323-21-classics"
         print(f"🔍 Запрос к лобби: {lobby_url}", flush=True)
         response = requests.get(lobby_url, headers=HEADERS, timeout=10)
         print(f"📡 Статус лобби: {response.status_code}", flush=True)
         if response.status_code != 200:
             return None
         
-        # ПАТТЕРН ДЛЯ ОБЫЧНОЙ 21
-        pattern = r'/twentyone/(\d+)-player-dealer'
+        pattern = r'/twentyone/2092323-21-classics/(\d+)-player-dealer'
         match = re.search(pattern, response.text)
         if match:
             game_id = match.group(1)
@@ -195,90 +194,4 @@ def main():
     while True:
         try:
             start_time = wait_for_start()
-            print(f"🕐 Старт в {datetime.fromtimestamp(start_time).strftime('%H:%M:%S')}", flush=True)
-            
-            time.sleep(2)
-            
-            game_id = None
-            print("🔍 Поиск игры...", flush=True)
-            for _ in range(10):
-                any_id = get_active_game_id()
-                if any_id:
-                    if any_id not in processed_games:
-                        game_id = any_id
-                        processed_games.add(game_id)
-                        print(f"✅ Найдена игра: {game_id}", flush=True)
-                        break
-                    else:
-                        print(f"⏭️ Игра {any_id} уже обработана", flush=True)
-                time.sleep(0.5)
-            
-            if not game_id:
-                print("❌ Игра не найдена, перезапуск...", flush=True)
-                continue
-            
-            url = f"https://1xlite-84484.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=7&topGroups=&country=190&marketType=1&isNewBuilder=true"
-            
-            game_started = False
-            last_message_id = None
-            game_number = 0
-            game_finished = False
-            
-            while not game_finished:
-                try:
-                    response = requests.get(url, headers=HEADERS, timeout=5)
-                    if response.status_code == 200:
-                        data = response.json()
-                        sc = data.get("Value", {}).get("SC", {})
-                        
-                        player_cards = []
-                        dealer_cards = []
-                        state = None
-                        
-                        for item in sc.get("S", []):
-                            if item.get("Key") == "P1":
-                                player_cards = json.loads(item.get("Value", "[]"))
-                            if item.get("Key") == "P2":
-                                dealer_cards = json.loads(item.get("Value", "[]"))
-                            if item.get("Key") == "STATE":
-                                state = item.get("Value")
-                        
-                        if player_cards:
-                            if not game_started:
-                                game_started = True
-                                game_number = get_game_number()
-                            
-                            p_score = calculate_score(player_cards)
-                            d_score = calculate_score(dealer_cards) if dealer_cards else 0
-                            
-                            msg = build_message(game_number, player_cards, dealer_cards, p_score, d_score, state)
-                            
-                            if last_message_id:
-                                edit_message(last_message_id, msg)
-                            else:
-                                last_message_id = send_message(msg)
-                            
-                            print(f"🔄 {msg}", flush=True)
-                            
-                            if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-                                game_finished = True
-                                print(f"🏁 Игра завершена", flush=True)
-                    
-                    time.sleep(0.3)
-                    
-                except requests.exceptions.Timeout:
-                    print("⏱️ Таймаут запроса, продолжаем...", flush=True)
-                    continue
-                except Exception as e:
-                    print(f"❌ Сбой: {e}", flush=True)
-                    time.sleep(3)
-                    break
-            
-            print("⏰ Игра завершена, ожидание следующей...", flush=True)
-            
-        except Exception as e:
-            print(f"❌ Критическая ошибка: {e}", flush=True)
-            time.sleep(5)
-
-if __name__ == "__main__":
-    main()
+            print(f"🕐 Старт в {datetime.fromtimestamp(start_time).strftime('%H:%M:%S
