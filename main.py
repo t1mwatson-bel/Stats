@@ -11,7 +11,7 @@ import sys
 # =====================================================================
 sys.stdout.flush()
 print("=" * 60, flush=True)
-print("🃏 ПАРСЕР 21 ОЧКО (CLASSIC) - ЗАПУСК", flush=True)
+print("🃏 ПАРСЕР 21 ОЧКО (ОБЫЧНАЯ) - ЗАПУСК", flush=True)
 print("=" * 60, flush=True)
 
 # =====================================================================
@@ -32,7 +32,7 @@ RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://1xlite-84484.pro/ru/live/twentyone/2092323-21-classics",
+    "Referer": "https://1xlite-84484.pro/ru/live/twentyone",
     "Cookie": "platform_type=desktop; SESSION=ca67837679e0e6d35d1b1baf235c2dff; lng=ru; _ga=GA1.1.185468893.1785072152"
 }
 
@@ -52,17 +52,17 @@ def get_game_number():
     return game_number
 
 def get_active_game_id():
-    """Получает ID активной игры со страницы лобби"""
+    """Получает ID активной игры со страницы лобби обычной 21"""
     try:
-        lobby_url = "https://1xlite-84484.pro/ru/live/twentyone/2092323-21-classics"
+        lobby_url = "https://1xlite-84484.pro/ru/live/twentyone"
         print(f"🔍 Запрос к лобби: {lobby_url}", flush=True)
         response = requests.get(lobby_url, headers=HEADERS, timeout=10)
         print(f"📡 Статус лобби: {response.status_code}", flush=True)
         if response.status_code != 200:
             return None
         
-        # Ищем ID игры в формате /twentyone/2092323-21-classics/ЧИСЛО-player-dealer
-        pattern = r'/twentyone/2092323-21-classics/(\d+)-player-dealer'
+        # ПАТТЕРН ДЛЯ ОБЫЧНОЙ 21
+        pattern = r'/twentyone/(\d+)-player-dealer'
         match = re.search(pattern, response.text)
         if match:
             game_id = match.group(1)
@@ -126,12 +126,15 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
     total = p_score + d_score if dealer_cards else p_score
     
     is_finished = False
-    if p_score == 21 or d_score == 21:
-        is_finished = True
-    if p_score > 21 or d_score > 21:
-        is_finished = True
     if state in ["4", "5"]:
         is_finished = True
+    if dealer_cards and len(dealer_cards) >= 2:
+        if p_score > 21 or d_score > 21:
+            is_finished = True
+        if p_score == 21 or d_score == 21:
+            is_finished = True
+        if len(dealer_cards) >= 3 and d_score >= 17:
+            is_finished = True
     
     if not is_finished:
         if not dealer_cards:
@@ -177,87 +180,17 @@ def wait_for_start():
             return time.time()
         time.sleep(0.1)
 
-def get_close_time():
-    """Возвращает время ближайшего :52 нечётной минуты"""
-    now = datetime.now(MOSCOW_TZ)
-    if now.minute % 2 == 1 and now.second >= 52:
-        close = now.replace(minute=now.minute + 2, second=52, microsecond=0)
-    elif now.minute % 2 == 1:
-        close = now.replace(second=52, microsecond=0)
-    else:
-        close = now.replace(minute=now.minute + 1, second=52, microsecond=0)
-    return close.timestamp()
-
 # =====================================================================
-# ОСНОВНОЙ ЦИКЛ
+# ОСНОВНОЙ ЦИКЛ (без close_time)
 # =====================================================================
-def parse_all_tables():
-    global messages, game_cache
-    
-    print("🔄 Начинаю парсинг...", flush=True)
-    
-    game_id = get_active_game_id()
-    if not game_id:
-        print("⚠️ Активная игра не найдена", flush=True)
-        return
-    
-    print(f"🔍 Обработка стола: {game_id}", flush=True)
-    data = get_game_data(game_id)
-    if not data:
-        return
-    
-    value = data.get("Value", {})
-    sc = value.get("SC", {})
-    
-    player_cards = []
-    dealer_cards = []
-    state = None
-    
-    for item in sc.get("S", []):
-        if item.get("Key") == "P1":
-            player_cards = json.loads(item.get("Value", "[]"))
-        if item.get("Key") == "P2":
-            dealer_cards = json.loads(item.get("Value", "[]"))
-        if item.get("Key") == "STATE":
-            state = item.get("Value")
-    
-    if not player_cards:
-        print(f"⏭️ Нет карт игрока в {game_id}", flush=True)
-        return
-    
-    if game_id not in game_cache:
-        game_cache[game_id] = get_game_number()
-    
-    game_num = game_cache[game_id]
-    
-    p_score = calculate_score(player_cards)
-    d_score = calculate_score(dealer_cards) if dealer_cards else 0
-    
-    msg = build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
-    print(f"📤 {msg}", flush=True)
-    
-    if game_id in messages:
-        edit_message(messages[game_id], msg)
-    else:
-        msg_id = send_message(msg)
-        if msg_id:
-            messages[game_id] = msg_id
-
-# =====================================================================
-# ЗАПУСК
-# =====================================================================
-if __name__ == "__main__":
-    print("🔄 Основной цикл запущен", flush=True)
-    
+def main():
+    print("🔄 ПАРСЕР ЗАПУЩЕН, ОЖИДАНИЕ СТАРТА...", flush=True)
     processed_games = set()
     
     while True:
         try:
             start_time = wait_for_start()
             print(f"🕐 Старт в {datetime.fromtimestamp(start_time).strftime('%H:%M:%S')}", flush=True)
-            
-            close_time = get_close_time()
-            print(f"🕐 Закрытие в {datetime.fromtimestamp(close_time).strftime('%H:%M:%S')}", flush=True)
             
             time.sleep(2)
             
@@ -283,11 +216,10 @@ if __name__ == "__main__":
             
             game_started = False
             last_message_id = None
-            last_player_cards = ""
-            last_dealer_cards = ""
             game_number = 0
             
-            while time.time() < close_time:
+            # Бесконечный цикл, пока игра не завершится
+            while True:
                 try:
                     response = requests.get(url, headers=HEADERS, timeout=5)
                     if response.status_code == 200:
@@ -310,33 +242,33 @@ if __name__ == "__main__":
                             if not game_started:
                                 game_started = True
                                 game_number = get_game_number()
-                                
-                                p_score = calculate_score(player_cards)
-                                d_score = calculate_score(dealer_cards) if dealer_cards else 0
-                                
-                                p_hand = format_cards(player_cards)
-                                d_hand = format_cards(dealer_cards) if dealer_cards else ""
-                                total = p_score + d_score if dealer_cards else p_score
-                                arrow = "◀️" if not dealer_cards else "▶️"
-                                
-                                msg = f"#N{game_number}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
-                                last_message_id = send_message(msg)
-                                print(f"🎯 Старт: {msg}", flush=True)
-                                continue
                             
                             p_score = calculate_score(player_cards)
                             d_score = calculate_score(dealer_cards) if dealer_cards else 0
+                            
                             p_hand = format_cards(player_cards)
                             d_hand = format_cards(dealer_cards) if dealer_cards else ""
-                            total = p_score + d_score if dealer_cards else p_score
-                            arrow = "◀️" if not dealer_cards else "▶️"
                             
-                            msg = f"#N{game_number}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
+                            msg = build_message(game_number, player_cards, dealer_cards, p_score, d_score, state)
+                            
                             if last_message_id:
                                 edit_message(last_message_id, msg)
                             else:
                                 last_message_id = send_message(msg)
+                            
                             print(f"🔄 {msg}", flush=True)
+                            
+                            # Проверяем, завершена ли игра
+                            if state in ["4", "5"]:
+                                print("🏁 Игра завершена (STATE)", flush=True)
+                                break
+                            if dealer_cards and len(dealer_cards) >= 2:
+                                if p_score > 21 or d_score > 21 or p_score == 21 or d_score == 21:
+                                    print("🏁 Игра завершена (победитель)", flush=True)
+                                    break
+                                if len(dealer_cards) >= 3 and d_score >= 17:
+                                    print("🏁 Игра завершена (дилер набрал)", flush=True)
+                                    break
                     
                     time.sleep(0.3)
                     
@@ -348,7 +280,7 @@ if __name__ == "__main__":
                     time.sleep(3)
                     break
             
-            print("⏰ Время работы истекло, перезапуск...", flush=True)
+            print("⏰ Игра завершена, ожидание следующей...", flush=True)
             
         except Exception as e:
             print(f"❌ Критическая ошибка: {e}", flush=True)
