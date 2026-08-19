@@ -11,7 +11,7 @@ import sys
 # =====================================================================
 sys.stdout.flush()
 print("=" * 60, flush=True)
-print("🃏 ПАРСЕР 21 ОЧКО (CLASSIC) - ЗАПУСК", flush=True)
+print("🃏 ПАРСЕР 21 CLASSIC - ЗАПУСК", flush=True)
 print("=" * 60, flush=True)
 
 # =====================================================================
@@ -52,7 +52,7 @@ def get_game_number():
     return game_number
 
 def get_active_game_id():
-    """Получает ID активной игры со страницы лобби"""
+    """Получает ID активной игры со страницы CLASSIC"""
     try:
         lobby_url = "https://1xlite-84484.pro/ru/live/twentyone/2092323-21-classics"
         print(f"🔍 Запрос к лобби: {lobby_url}", flush=True)
@@ -191,64 +191,8 @@ def get_close_time():
 # =====================================================================
 # ОСНОВНОЙ ЦИКЛ
 # =====================================================================
-def parse_all_tables():
-    global messages, game_cache
-    
-    print("🔄 Начинаю парсинг...", flush=True)
-    
-    game_id = get_active_game_id()
-    if not game_id:
-        print("⚠️ Активная игра не найдена", flush=True)
-        return
-    
-    print(f"🔍 Обработка стола: {game_id}", flush=True)
-    data = get_game_data(game_id)
-    if not data:
-        return
-    
-    value = data.get("Value", {})
-    sc = value.get("SC", {})
-    
-    player_cards = []
-    dealer_cards = []
-    state = None
-    
-    for item in sc.get("S", []):
-        if item.get("Key") == "P1":
-            player_cards = json.loads(item.get("Value", "[]"))
-        if item.get("Key") == "P2":
-            dealer_cards = json.loads(item.get("Value", "[]"))
-        if item.get("Key") == "STATE":
-            state = item.get("Value")
-    
-    if not player_cards:
-        print(f"⏭️ Нет карт игрока в {game_id}", flush=True)
-        return
-    
-    if game_id not in game_cache:
-        game_cache[game_id] = get_game_number()
-    
-    game_num = game_cache[game_id]
-    
-    p_score = calculate_score(player_cards)
-    d_score = calculate_score(dealer_cards) if dealer_cards else 0
-    
-    msg = build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
-    print(f"📤 {msg}", flush=True)
-    
-    if game_id in messages:
-        edit_message(messages[game_id], msg)
-    else:
-        msg_id = send_message(msg)
-        if msg_id:
-            messages[game_id] = msg_id
-
-# =====================================================================
-# ЗАПУСК
-# =====================================================================
-if __name__ == "__main__":
-    print("🔄 Основной цикл запущен", flush=True)
-    
+def main():
+    print("🔄 ПАРСЕР ЗАПУЩЕН, ОЖИДАНИЕ СТАРТА...", flush=True)
     processed_games = set()
     
     while True:
