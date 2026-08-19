@@ -24,7 +24,6 @@ try:
 except Exception as e:
     print(f"❌ Ошибка доступа к сайту: {e}", flush=True)
 
-# Тест API 21 очка
 print("🧪 Тест API 21 очка...", flush=True)
 test_url = "https://1xlite-84484.pro/service-api/LiveFeed/Get1x2_VZip?sports=146&champs=1643503&count=10&gr=2336&mode=4&country=190&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
 try:
@@ -38,7 +37,6 @@ try:
         print(f"⚠️ Ответ: {r.text[:200] if r.text else 'пусто'}", flush=True)
 except Exception as e:
     print(f"❌ Ошибка API: {e}", flush=True)
-# =====================================================================
 
 # =====================================================================
 # НАСТРОЙКИ
@@ -157,10 +155,15 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
         is_finished = True
     
     if not is_finished:
+        # 🔥 ИСПРАВЛЕННАЯ ЛОГИКА СТРЕЛКИ
         if not dealer_cards:
-            arrow = "◀️"
+            arrow = "◀️"  # Игрок берёт, если у дилера нет карт
+        elif len(dealer_cards) < 2:
+            arrow = "◀️"  # Игрок берёт, если у дилера меньше 2 карт
+        elif len(player_cards) < 3 and p_score < 21:
+            arrow = "◀️"  # Игрок берёт, если у него меньше 3 карт и меньше 21 очка
         else:
-            arrow = "▶️"
+            arrow = "▶️"  # Дилер берёт
         return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
     
     if p_score > 21:
