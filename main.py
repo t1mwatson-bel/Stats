@@ -52,7 +52,7 @@ def get_game_number():
     return game_number
 
 def get_active_game_id():
-    """Получает ID активной игры со страницы CLASSIC"""
+    """Получает ID активной игры со страницы лобби"""
     try:
         lobby_url = "https://1xlite-84484.pro/ru/live/twentyone/2092323-21-classics"
         print(f"🔍 Запрос к лобби: {lobby_url}", flush=True)
@@ -61,6 +61,7 @@ def get_active_game_id():
         if response.status_code != 200:
             return None
         
+        # Ищем ID игры в формате /twentyone/2092323-21-classics/ЧИСЛО-player-dealer
         pattern = r'/twentyone/2092323-21-classics/(\d+)-player-dealer'
         match = re.search(pattern, response.text)
         if match:
@@ -119,43 +120,35 @@ def calculate_score(cards):
         aces -= 1
     return score
 
-def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    """Проверяет, завершена ли игра"""
-    if state in ["4", "5"]:
-        return True
-    
-    if dealer_cards and len(dealer_cards) >= 2:
-        if p_score > 21 or d_score > 21:
-            return True
-        if p_score == 21 or d_score == 21:
-            return True
-        if len(dealer_cards) >= 3 and d_score >= 17:
-            return True
-    
-    return False
-
 def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state):
     p_hand = format_cards(player_cards)
     d_hand = format_cards(dealer_cards)
     total = p_score + d_score if dealer_cards else p_score
     
-    if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-        if p_score > 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
-        if d_score > 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
-        if p_score > d_score:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
-        if d_score > p_score:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
-        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
+    is_finished = False
+    if p_score == 21 or d_score == 21:
+        is_finished = True
+    if p_score > 21 or d_score > 21:
+        is_finished = True
+    if state in ["4", "5"]:
+        is_finished = True
     
-    if not dealer_cards:
-        arrow = "◀️"
-    else:
-        arrow = "▶️"
+    if not is_finished:
+        if not dealer_cards:
+            arrow = "◀️"
+        else:
+            arrow = "▶️"
+        return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
     
-    return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
+    if p_score > 21:
+        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+    if d_score > 21:
+        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+    if p_score > d_score:
+        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+    if d_score > p_score:
+        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+    return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
 
 def send_message(text):
     try:
@@ -184,17 +177,87 @@ def wait_for_start():
             return time.time()
         time.sleep(0.1)
 
+def get_close_time():
+    """Возвращает время ближайшего :52 нечётной минуты"""
+    now = datetime.now(MOSCOW_TZ)
+    if now.minute % 2 == 1 and now.second >= 52:
+        close = now.replace(minute=now.minute + 2, second=52, microsecond=0)
+    elif now.minute % 2 == 1:
+        close = now.replace(second=52, microsecond=0)
+    else:
+        close = now.replace(minute=now.minute + 1, second=52, microsecond=0)
+    return close.timestamp()
+
 # =====================================================================
 # ОСНОВНОЙ ЦИКЛ
 # =====================================================================
-def main():
-    print("🔄 ПАРСЕР ЗАПУЩЕН, ОЖИДАНИЕ СТАРТА...", flush=True)
+def parse_all_tables():
+    global messages, game_cache
+    
+    print("🔄 Начинаю парсинг...", flush=True)
+    
+    game_id = get_active_game_id()
+    if not game_id:
+        print("⚠️ Активная игра не найдена", flush=True)
+        return
+    
+    print(f"🔍 Обработка стола: {game_id}", flush=True)
+    data = get_game_data(game_id)
+    if not data:
+        return
+    
+    value = data.get("Value", {})
+    sc = value.get("SC", {})
+    
+    player_cards = []
+    dealer_cards = []
+    state = None
+    
+    for item in sc.get("S", []):
+        if item.get("Key") == "P1":
+            player_cards = json.loads(item.get("Value", "[]"))
+        if item.get("Key") == "P2":
+            dealer_cards = json.loads(item.get("Value", "[]"))
+        if item.get("Key") == "STATE":
+            state = item.get("Value")
+    
+    if not player_cards:
+        print(f"⏭️ Нет карт игрока в {game_id}", flush=True)
+        return
+    
+    if game_id not in game_cache:
+        game_cache[game_id] = get_game_number()
+    
+    game_num = game_cache[game_id]
+    
+    p_score = calculate_score(player_cards)
+    d_score = calculate_score(dealer_cards) if dealer_cards else 0
+    
+    msg = build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
+    print(f"📤 {msg}", flush=True)
+    
+    if game_id in messages:
+        edit_message(messages[game_id], msg)
+    else:
+        msg_id = send_message(msg)
+        if msg_id:
+            messages[game_id] = msg_id
+
+# =====================================================================
+# ЗАПУСК
+# =====================================================================
+if __name__ == "__main__":
+    print("🔄 Основной цикл запущен", flush=True)
+    
     processed_games = set()
     
     while True:
         try:
             start_time = wait_for_start()
             print(f"🕐 Старт в {datetime.fromtimestamp(start_time).strftime('%H:%M:%S')}", flush=True)
+            
+            close_time = get_close_time()
+            print(f"🕐 Закрытие в {datetime.fromtimestamp(close_time).strftime('%H:%M:%S')}", flush=True)
             
             time.sleep(2)
             
@@ -220,10 +283,11 @@ def main():
             
             game_started = False
             last_message_id = None
+            last_player_cards = ""
+            last_dealer_cards = ""
             game_number = 0
-            game_finished = False
             
-            while not game_finished:
+            while time.time() < close_time:
                 try:
                     response = requests.get(url, headers=HEADERS, timeout=5)
                     if response.status_code == 200:
@@ -246,25 +310,33 @@ def main():
                             if not game_started:
                                 game_started = True
                                 game_number = get_game_number()
+                                
+                                p_score = calculate_score(player_cards)
+                                d_score = calculate_score(dealer_cards) if dealer_cards else 0
+                                
+                                p_hand = format_cards(player_cards)
+                                d_hand = format_cards(dealer_cards) if dealer_cards else ""
+                                total = p_score + d_score if dealer_cards else p_score
+                                arrow = "◀️" if not dealer_cards else "▶️"
+                                
+                                msg = f"#N{game_number}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
+                                last_message_id = send_message(msg)
+                                print(f"🎯 Старт: {msg}", flush=True)
+                                continue
                             
                             p_score = calculate_score(player_cards)
                             d_score = calculate_score(dealer_cards) if dealer_cards else 0
-                            
                             p_hand = format_cards(player_cards)
                             d_hand = format_cards(dealer_cards) if dealer_cards else ""
+                            total = p_score + d_score if dealer_cards else p_score
+                            arrow = "◀️" if not dealer_cards else "▶️"
                             
-                            msg = build_message(game_number, player_cards, dealer_cards, p_score, d_score, state)
-                            
+                            msg = f"#N{game_number}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
                             if last_message_id:
                                 edit_message(last_message_id, msg)
                             else:
                                 last_message_id = send_message(msg)
-                            
                             print(f"🔄 {msg}", flush=True)
-                            
-                            if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-                                game_finished = True
-                                print(f"🏁 Игра завершена", flush=True)
                     
                     time.sleep(0.3)
                     
@@ -276,7 +348,7 @@ def main():
                     time.sleep(3)
                     break
             
-            print("⏰ Игра завершена, ожидание следующей...", flush=True)
+            print("⏰ Время работы истекло, перезапуск...", flush=True)
             
         except Exception as e:
             print(f"❌ Критическая ошибка: {e}", flush=True)
