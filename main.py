@@ -1,12 +1,9 @@
 import sys
 import time
-from datetime import datetime
 
-print("=" * 50, flush=True)
-print("✅ ТЕСТОВЫЙ СКРИПТ ЗАПУЩЕН", flush=True)
-print(f"🕐 {datetime.now()}", flush=True)
-print("=" * 50, flush=True)
+print("🃏 ПАРСЕР 21 ОЧКО - ЗАПУСК", flush=True)
+print("✅ Скрипт работает", flush=True)
 
 while True:
-    print(f"🔄 Бот работает... {datetime.now()}", flush=True)
+    print("🔄 Парсер активен...", flush=True)
     time.sleep(10)
