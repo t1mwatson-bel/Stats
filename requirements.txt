@@ -1,3 +1,2 @@
-python-telegram-bot==20.7
-tenacity==8.2.3
-httpx==0.25.2
+requests
+pytz
