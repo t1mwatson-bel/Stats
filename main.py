@@ -61,7 +61,7 @@ def get_active_game_id():
         if response.status_code != 200:
             return None
         
-        # Ищем ID игры в формате /twentyone/2092323-21-classics/ЧИСЛО-player-dealer
+        # ПАТТЕРН ДЛЯ CLASSIC
         pattern = r'/twentyone/2092323-21-classics/(\d+)-player-dealer'
         match = re.search(pattern, response.text)
         if match:
