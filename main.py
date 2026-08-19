@@ -36,7 +36,7 @@ MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://1xlite-79365.pro/ru/live/twentyone",
+    "Referer": "https://1xlite-84484.pro/ru/live/twentyone",
     "Cookie": "platform_type=desktop; SESSION=ca67837679e0e6d35d1b1baf235c2dff; lng=ru; _ga=GA1.1.185468893.1785072152"
 }
 
@@ -76,13 +76,18 @@ def get_game_number():
 
 def get_active_game_id():
     try:
-        lobby_url = "https://1xlite-79365.pro/ru/live/twentyone/2092323-21-classics"
+        lobby_url = "https://1xlite-84484.pro/ru/live/twentyone"
         response = requests.get(lobby_url, headers=HEADERS, timeout=10)
         if response.status_code == 200:
-            pattern = r'/twentyone/2092323-21-classics/(\d+)-player-dealer'
+            pattern = r'/twentyone/(\d+)'
             match = re.search(pattern, response.text)
             if match:
-                return match.group(1)
+                game_id = match.group(1)
+                print(f"✅ Найден активный ID игры: {game_id}", flush=True)
+                return game_id
+            else:
+                print("⚠️ ID игры не найден на странице", flush=True)
+                print(response.text[:500], flush=True)
     except Exception as e:
         print(f"❌ Ошибка получения ID игры: {e}", flush=True)
     return None
@@ -200,7 +205,7 @@ def main():
                 print("❌ Игра не найдена, перезапуск...", flush=True)
                 continue
             
-            url = f"https://1xlite-79365.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=7&topGroups=&country=190&marketType=1&isNewBuilder=true"
+            url = f"https://1xlite-84484.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=7&topGroups=&country=190&marketType=1&isNewBuilder=true"
             
             game_started = False
             last_message_id = None
