@@ -95,90 +95,60 @@ def format_cards(cards):
     return "".join(result)
 
 def calculate_score(cards):
-    """
-    Правильный подсчёт очков в 21 очко:
-    - Туз = 11, но если перебор, то становится 1
-    - 2 туза = 22 (перебор)
-    - При 21 игра завершается
-    """
     if not cards:
         return 0
-    
     score = 0
     aces = 0
-    
     for c in cards:
         cv = c.get("CV", 0)
-        if cv == 14:  # Туз
+        if cv == 14:
             aces += 1
             score += 11
-        elif cv == 13:  # Король
+        elif cv == 13:
             score += 4
-        elif cv == 12:  # Дама
+        elif cv == 12:
             score += 3
-        elif cv == 11:  # Валет
+        elif cv == 11:
             score += 2
         elif 6 <= cv <= 10:
             score += cv
-        # Карты 2-5 не используются в этой версии
-    
-    # Коррекция тузов: если перебор, туз становится 1
     while score > 21 and aces > 0:
         score -= 10
         aces -= 1
-    
     return score
-
-def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    """
-    Проверяет, завершена ли игра
-    """
-    # Если есть финальный статус
-    if state in ["4", "5"]:
-        return True
-    
-    # Если у кого-то 21 — игра завершена (победа)
-    if p_score == 21 or d_score == 21:
-        return True
-    
-    # Если у кого-то перебор
-    if p_score > 21 or d_score > 21:
-        return True
-    
-    # Если дилер набрал 17+ и у него есть карты
-    if dealer_cards and len(dealer_cards) >= 2 and d_score >= 17:
-        return True
-    
-    return False
 
 def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state):
     p_hand = format_cards(player_cards)
     d_hand = format_cards(dealer_cards)
     total = p_score + d_score if dealer_cards else p_score
     
-    # Определяем, кто выиграл
-    if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-        if p_score > 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
-        if d_score > 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
-        if p_score == 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
-        if d_score == 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
-        if p_score > d_score:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
-        if d_score > p_score:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
-        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
+    is_finished = False
+    if state in ["4", "5"]:
+        is_finished = True
+    if dealer_cards and len(dealer_cards) >= 2:
+        if p_score > 21 or d_score > 21:
+            is_finished = True
+        if p_score == 21 or d_score == 21:
+            is_finished = True
+        if len(dealer_cards) >= 3 and d_score >= 17:
+            is_finished = True
     
-    # Игра ещё идёт
-    if not dealer_cards:
-        arrow = "◀️"  # Игрок ходит
-    else:
-        arrow = "▶️"  # Дилер ходит
+    if not is_finished:
+        if not dealer_cards:
+            arrow = "◀️"
+        else:
+            arrow = "▶️"
+        return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
     
-    return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
+    if p_score > 21:
+        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+    if d_score > 21:
+        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+    if p_score > d_score:
+        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+    if d_score > p_score:
+        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+    return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
 
 def send_message(text):
     try:
@@ -284,10 +254,16 @@ def main():
                             
                             print(f"🔄 {msg}", flush=True)
                             
-                            # Проверяем, завершена ли игра
-                            if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-                                game_finished = True
-                                print(f"🏁 Игра завершена", flush=True)
+                            if state in ["4", "5"]:
+                                print("🏁 Игра завершена (STATE)", flush=True)
+                                break
+                            if dealer_cards and len(dealer_cards) >= 2:
+                                if p_score > 21 or d_score > 21 or p_score == 21 or d_score == 21:
+                                    print("🏁 Игра завершена (победитель)", flush=True)
+                                    break
+                                if len(dealer_cards) >= 3 and d_score >= 17:
+                                    print("🏁 Игра завершена (дилер набрал)", flush=True)
+                                    break
                     
                     time.sleep(0.3)
                     
