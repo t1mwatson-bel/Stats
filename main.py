@@ -52,7 +52,7 @@ def get_game_number():
 
 def get_active_game_id():
     try:
-        lobby_url = "https://1xlite-84484.pro/ru/live/twentyone/2092323-21-classics"
+        lobby_url = "https://1xlite-65155.pro/ru/live/twentyone/1643503-twentyone-game?platform_type=desktop"
         print(f"🔍 Запрос к лобби: {lobby_url}", flush=True)
         response = requests.get(lobby_url, headers=HEADERS, timeout=10)
         print(f"📡 Статус лобби: {response.status_code}", flush=True)
