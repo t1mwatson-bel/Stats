@@ -184,10 +184,13 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
             return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
         return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
     
-    if not dealer_cards:
-        arrow = "◀️"
-    else:
-        arrow = "▶️"
+    # Определяем, кто ходит
+if not dealer_cards:
+    arrow = "◀️"  # Игрок берёт, если у дилера нет карт
+elif p_score < 17:
+    arrow = "◀️"  # Игрок берёт, если у него меньше 17
+else:
+    arrow = "▶️"  # Дилер берёт
     
     return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
 
