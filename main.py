@@ -112,7 +112,6 @@ def format_cards(cards):
     return "".join(result)
 
 def calculate_score(cards):
-    """Правильный подсчёт очков в 21 очко"""
     if not cards:
         return 0
     
@@ -132,6 +131,10 @@ def calculate_score(cards):
             score += 2
         elif 6 <= cv <= 10:
             score += cv
+    
+    # Если два туза — это 21
+    if aces == 2 and score == 22:
+        return 21
     
     # Коррекция тузов: если перебор, туз становится 1
     while score > 21 and aces > 0:
