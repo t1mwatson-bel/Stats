@@ -25,9 +25,9 @@ MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 messages = {}
 game_cache = {}
-processed_games = set()  # Храним ID завершённых игр
+processed_games = set()
 
-SUITS_NAMES = {0: "♠", 1: "♣", 2: "♦", 3: "♥"}
+SUITS_NAMES = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A"}
 
 HEADERS = {
@@ -62,7 +62,6 @@ def get_active_games():
         if response.status_code == 200:
             data = response.json()
             
-            # Если ответ — список
             if isinstance(data, list):
                 games = data
             elif isinstance(data, dict) and "Value" in data:
@@ -75,7 +74,6 @@ def get_active_games():
             
             active_games = []
             for game in games:
-                # Проверяем, что это 21 очко
                 if game.get("sport", {}).get("id") == 146:
                     game_id = game.get("id")
                     if game_id and str(game_id) not in processed_games:
@@ -103,11 +101,13 @@ def get_game_data(game_id):
     return None
 
 def format_cards(cards):
+    """Форматирует карты с цветными эмодзи"""
     if not cards:
         return ""
     result = []
+    suit_emoji = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
     for c in cards:
-        suit = SUITS_NAMES.get(c.get("CS", 0), "?")
+        suit = suit_emoji.get(c.get("CS", 0), "?")
         rank = RANKS.get(c.get("CV", 0), str(c.get("CV", "?")))
         result.append(f"{rank}{suit}")
     return "".join(result)
@@ -122,23 +122,21 @@ def calculate_score(cards):
     
     for c in cards:
         cv = c.get("CV", 0)
-        if cv == 14:  # Туз
+        if cv == 14:
             aces += 1
             score += 11
-        elif cv == 13:  # Король
+        elif cv == 13:
             score += 4
-        elif cv == 12:  # Дама
+        elif cv == 12:
             score += 3
-        elif cv == 11:  # Валет
+        elif cv == 11:
             score += 2
         elif 6 <= cv <= 10:
             score += cv
     
-    # Два туза = 21
     if aces == 2 and score == 22:
         return 21
     
-    # Коррекция тузов: если перебор, туз становится 1
     while score > 21 and aces > 0:
         score -= 10
         aces -= 1
@@ -156,6 +154,11 @@ def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
     if p_score > 21 or d_score > 21:
         return True
     
+    # Если у игрока меньше 17, он может брать карты
+    if p_score < 17:
+        return False
+    
+    # Дилер добирает только если у него 2+ карты и >= 17
     if dealer_cards and len(dealer_cards) >= 2 and d_score >= 17:
         return True
     
@@ -219,7 +222,6 @@ def main():
     
     while True:
         try:
-            # Получаем все активные игры
             active_games = get_active_games()
             
             if not active_games:
@@ -227,15 +229,12 @@ def main():
                 time.sleep(5)
                 continue
             
-            # Обрабатываем каждую игру
             for game in active_games:
                 game_id = str(game.get("id"))
                 
-                # Проверяем, не обработана ли уже
                 if game_id in processed_games:
                     continue
                 
-                # Получаем детальные данные игры
                 data = get_game_data(game_id)
                 if not data:
                     continue
@@ -257,17 +256,13 @@ def main():
                 if not player_cards:
                     continue
                 
-                # Получаем номер игры
                 game_number = get_game_number()
                 
-                # Считаем очки
                 p_score = calculate_score(player_cards)
                 d_score = calculate_score(dealer_cards) if dealer_cards else 0
                 
-                # Формируем сообщение
                 msg = build_message(game_number, player_cards, dealer_cards, p_score, d_score, state)
                 
-                # Отправляем или редактируем
                 if game_id in messages:
                     edit_message(messages[game_id], msg)
                     print(f"🔄 Обновлена игра {game_id}: {msg}", flush=True)
@@ -277,22 +272,12 @@ def main():
                         messages[game_id] = msg_id
                         print(f"📤 Новая игра {game_id}: {msg}", flush=True)
                 
-                # Если игра завершена, добавляем в обработанные
                 if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
                     processed_games.add(game_id)
                     print(f"🏁 Игра {game_id} завершена", flush=True)
                 
-                # Небольшая задержка между обработкой игр
                 time.sleep(0.3)
             
-            # Очищаем кэш сообщений для игр, которых больше нет
-            current_ids = [str(g.get("id")) for g in active_games]
-            for old_id in list(messages.keys()):
-                if old_id not in current_ids and old_id in processed_games:
-                    # Игра завершена и больше не активна, удаляем из кэша через 30 секунд
-                    pass
-            
-            # Очищаем processed_games, если он слишком большой
             if len(processed_games) > 200:
                 processed_games.clear()
                 print("🗑️ Кэш обработанных игр очищен", flush=True)
