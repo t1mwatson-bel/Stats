@@ -26,6 +26,7 @@ API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 messages = {}
 game_cache = {}
 processed_games = set()
+game_numbers = {}  # ✅ Храним номера игр по game_id
 
 SUITS_NAMES = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A"}
@@ -131,7 +132,6 @@ def calculate_score(cards):
             score += 2
         elif 6 <= cv <= 10:  # 6,7,8,9,10
             score += cv
-        # Карты 2-5 не учитываются (в 21 классик они 0 очков)
     
     return score
 
@@ -146,11 +146,9 @@ def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
     if p_score > 21 or d_score > 21:
         return True
     
-    # Если у игрока меньше 17, он может брать карты
     if p_score < 17:
         return False
     
-    # Дилер добирает только если у него 2+ карты и >= 17
     if dealer_cards and len(dealer_cards) >= 2 and d_score >= 17:
         return True
     
@@ -176,13 +174,12 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
             return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
         return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
     
-    # Определяем, кто ходит
     if not dealer_cards:
-        arrow = "◀️"  # Игрок берёт, если у дилера нет карт
+        arrow = "◀️"
     elif p_score < 19:
-        arrow = "◀️"  # Игрок берёт, если у него меньше 19
+        arrow = "◀️"
     else:
-        arrow = "▶️"  # Дилер берёт
+        arrow = "▶️"
     
     return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
 
@@ -209,7 +206,7 @@ def edit_message(message_id, text):
 # ОСНОВНОЙ ЦИКЛ
 # =====================================================================
 def main():
-    global processed_games
+    global processed_games, game_numbers
     
     print("🔄 ПАРСЕР ЗАПУЩЕН (МНОГОПОТОЧНЫЙ)", flush=True)
     print(f"🕐 Игры каждую минуту, старт в 03:00", flush=True)
@@ -254,23 +251,27 @@ def main():
                             dealer_cards = []
                     if item.get("Key") == "STATE":
                         state = item.get("Value")
-                    if item.get("Key") in ["GN", "MI", "ID", "NUM"]:  # Пробуем разные варианты
+                    if item.get("Key") in ["GN", "MI", "ID", "NUM"]:
                         game_number_from_api = item.get("Value")
                 
                 if not player_cards:
                     continue
                 
-                # ✅ Берем номер игры из API, если есть
-                if game_number_from_api:
-                    try:
-                        game_number = int(game_number_from_api)
-                        print(f"📌 Номер игры из API: {game_number}", flush=True)
-                    except:
-                        game_number = get_game_number_fallback()
-                        print(f"⚠️ Не удалось преобразовать {game_number_from_api}, используем fallback: {game_number}", flush=True)
+                # ✅ Если номер уже есть для этого game_id — используем его
+                if game_id in game_numbers:
+                    game_number = game_numbers[game_id]
+                    print(f"📌 Используем сохранённый номер для {game_id}: {game_number}", flush=True)
                 else:
-                    game_number = get_game_number_fallback()
-                    print(f"⚠️ Номер игры не найден в API, используем fallback: {game_number}", flush=True)
+                    # Первый раз — сохраняем номер
+                    if game_number_from_api:
+                        try:
+                            game_number = int(game_number_from_api)
+                        except:
+                            game_number = get_game_number_fallback()
+                    else:
+                        game_number = get_game_number_fallback()
+                    game_numbers[game_id] = game_number
+                    print(f"📌 Сохранён новый номер для {game_id}: {game_number}", flush=True)
                 
                 p_score = calculate_score(player_cards)
                 d_score = calculate_score(dealer_cards) if dealer_cards else 0
@@ -292,9 +293,14 @@ def main():
                 
                 time.sleep(0.3)
             
+            # Очистка кэша
             if len(processed_games) > 200:
                 processed_games.clear()
                 print("🗑️ Кэш обработанных игр очищен", flush=True)
+            
+            if len(game_numbers) > 200:
+                game_numbers.clear()
+                print("🗑️ Кэш номеров игр очищен", flush=True)
             
             time.sleep(2)
             
