@@ -59,13 +59,24 @@ def get_active_game_id():
         
         if response.status_code == 200:
             data = response.json()
-            games = data.get("Value", [])
+            print(f"📊 Тип ответа: {type(data)}", flush=True)
+            
+            # Если ответ — список
+            if isinstance(data, list):
+                games = data
+            # Если ответ — словарь с полем Value
+            elif isinstance(data, dict) and "Value" in data:
+                games = data.get("Value", [])
+            else:
+                print(f"⚠️ Неизвестный формат ответа", flush=True)
+                return None
+            
             print(f"📊 Найдено игр в ответе: {len(games)}", flush=True)
             
-            # Ищем игру 21 очко (sportId = 146)
             for game in games:
-                if game.get("SI") == 146:
-                    game_id = game.get("I")
+                # Проверяем, что это 21 очко
+                if game.get("sport", {}).get("id") == 146:
+                    game_id = game.get("id")
                     if game_id:
                         print(f"✅ Найден ID игры: {game_id}", flush=True)
                         return str(game_id)
