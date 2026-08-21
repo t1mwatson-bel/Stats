@@ -42,8 +42,8 @@ print("✅ Настройки загружены", flush=True)
 # =====================================================================
 # ФУНКЦИИ
 # =====================================================================
-def get_game_number():
-    """Номер игры от 1 до 1440 (каждую минуту, старт в 03:00)"""
+def get_game_number_fallback():
+    """Номер игры от 1 до 1440 (каждую минуту, старт в 03:00) - используется только если из API не пришёл"""
     now = datetime.now(MOSCOW_TZ)
     start = now.replace(hour=3, minute=0, second=0, microsecond=0)
     if now < start:
@@ -180,7 +180,7 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
     if not dealer_cards:
         arrow = "◀️"  # Игрок берёт, если у дилера нет карт
     elif p_score < 19:
-        arrow = "◀️"  # Игрок берёт, если у него меньше 17
+        arrow = "◀️"  # Игрок берёт, если у него меньше 19
     else:
         arrow = "▶️"  # Дилер берёт
     
@@ -239,19 +239,38 @@ def main():
                 player_cards = []
                 dealer_cards = []
                 state = None
+                game_number_from_api = None
                 
                 for item in sc.get("S", []):
                     if item.get("Key") == "P1":
-                        player_cards = json.loads(item.get("Value", "[]"))
+                        try:
+                            player_cards = json.loads(item.get("Value", "[]"))
+                        except:
+                            player_cards = []
                     if item.get("Key") == "P2":
-                        dealer_cards = json.loads(item.get("Value", "[]"))
+                        try:
+                            dealer_cards = json.loads(item.get("Value", "[]"))
+                        except:
+                            dealer_cards = []
                     if item.get("Key") == "STATE":
                         state = item.get("Value")
+                    if item.get("Key") in ["GN", "MI", "ID", "NUM"]:  # Пробуем разные варианты
+                        game_number_from_api = item.get("Value")
                 
                 if not player_cards:
                     continue
                 
-                game_number = get_game_number()
+                # ✅ Берем номер игры из API, если есть
+                if game_number_from_api:
+                    try:
+                        game_number = int(game_number_from_api)
+                        print(f"📌 Номер игры из API: {game_number}", flush=True)
+                    except:
+                        game_number = get_game_number_fallback()
+                        print(f"⚠️ Не удалось преобразовать {game_number_from_api}, используем fallback: {game_number}", flush=True)
+                else:
+                    game_number = get_game_number_fallback()
+                    print(f"⚠️ Номер игры не найден в API, используем fallback: {game_number}", flush=True)
                 
                 p_score = calculate_score(player_cards)
                 d_score = calculate_score(dealer_cards) if dealer_cards else 0
