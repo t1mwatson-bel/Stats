@@ -179,7 +179,7 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
     # Определяем, кто ходит
     if not dealer_cards:
         arrow = "◀️"  # Игрок берёт, если у дилера нет карт
-    elif p_score < 17:
+    elif p_score < 19:
         arrow = "◀️"  # Игрок берёт, если у него меньше 17
     else:
         arrow = "▶️"  # Дилер берёт
