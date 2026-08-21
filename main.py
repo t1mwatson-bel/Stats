@@ -11,7 +11,7 @@ import sys
 # =====================================================================
 sys.stdout.flush()
 print("=" * 60, flush=True)
-print("🃏 ПАРСЕР 21 ОЧКО - ЗАПУСК", flush=True)
+print("🃏 ПАРСЕР 21 ОЧКО - V3 API", flush=True)
 print("=" * 60, flush=True)
 
 # =====================================================================
@@ -32,8 +32,8 @@ RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://1xlite-65155.pro/ru/live/twentyone/1643503-twentyone-game?platform_type=desktop",
-    "Cookie": "platform_type=desktop; SESSION=ca67837679e0e6d35d1b1baf235c2dff; lng=ru; _ga=GA1.1.185468893.1785072152"
+    "Referer": "https://1xlite-84484.pro/ru/live/twentyone/1643503-twentyone-game",
+    "Cookie": "platform_type=desktop; SESSION=34219176f69eace1b636911e2de9a15e; lng=ru; cookies_agree_type=3; tzo=3; is12h=0; auid=uaJbk2qIgo2M+6ofAxNqAg==; _ym_isad=2; _ym_visorc=b; mdd=1; _ga_7JGWL9SV66=GS2.1.s1787331227$o3$g1$t1787331236$j51$l0$h1840256937; window_width=150; referral_values=%7B%22type%22%3A%22reflinkid%22%2C%22val%22%3A%22s_50970m_355c_%22%2C%22additional%22%3A%7B%22name_tag%22%3A%22tag%22%7D%7D; fatman_uuid=45f69ff0-ecb1-67d4-3ff2-3a45baafc739; che_g=777dc1b9-efbf-4728-947a-4a2992ef6da5; sh.session.id=684214c4-f09e-42da-9c1a-ea61b9aca91b; _ym_uid=1786989905737338437; _ym_d=1786989905; _ga=GA1.1.547872848.1786989906"
 }
 
 print("✅ Настройки загружены", flush=True)
@@ -51,26 +51,32 @@ def get_game_number():
     return game_number
 
 def get_active_game_id():
+    """Получает ID активной игры через V3 API"""
     try:
-        lobby_url = "https://1xlite-65155.pro/ru/live/twentyone/1643503-twentyone-game?platform_type=desktop"
-        print(f"🔍 Запрос к лобби: {lobby_url}", flush=True)
-        response = requests.get(lobby_url, headers=HEADERS, timeout=10)
-        print(f"📡 Статус лобби: {response.status_code}", flush=True)
-        if response.status_code != 200:
-            return None
+        url = "https://1xlite-84484.pro/service-api/main-live-feed/v3/games1x2?cfView=3&count=40&fcountry=1&gr=415&grMode=4&lng=ru&ref=7&selectedMs=10.146.1643503"
+        print(f"🔍 Запрос к API V3...", flush=True)
+        response = requests.get(url, headers=HEADERS, timeout=10)
         
-        pattern = r'/twentyone/2092323-21-classics/(\d+)-player-dealer'
-        match = re.search(pattern, response.text)
-        if match:
-            game_id = match.group(1)
-            print(f"✅ Найден активный ID игры: {game_id}", flush=True)
-            return game_id
+        if response.status_code == 200:
+            data = response.json()
+            games = data.get("Value", [])
+            print(f"📊 Найдено игр в ответе: {len(games)}", flush=True)
+            
+            # Ищем игру 21 очко (sportId = 146)
+            for game in games:
+                if game.get("SI") == 146:
+                    game_id = game.get("I")
+                    if game_id:
+                        print(f"✅ Найден ID игры: {game_id}", flush=True)
+                        return str(game_id)
+            
+            print("⚠️ Игра 21 очко не найдена", flush=True)
         else:
-            print("⚠️ ID игры не найден на странице", flush=True)
-            return None
+            print(f"⚠️ Статус API: {response.status_code}", flush=True)
     except Exception as e:
-        print(f"❌ Ошибка получения ID игры: {e}", flush=True)
-        return None
+        print(f"❌ Ошибка: {e}", flush=True)
+    
+    return None
 
 def get_game_data(game_id):
     url = f"https://1xlite-84484.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=7&topGroups=&country=190&marketType=1&isNewBuilder=true"
@@ -95,60 +101,76 @@ def format_cards(cards):
     return "".join(result)
 
 def calculate_score(cards):
+    """Правильный подсчёт очков в 21 очко"""
     if not cards:
         return 0
+    
     score = 0
     aces = 0
+    
     for c in cards:
         cv = c.get("CV", 0)
-        if cv == 14:
+        if cv == 14:  # Туз
             aces += 1
             score += 11
-        elif cv == 13:
+        elif cv == 13:  # Король
             score += 4
-        elif cv == 12:
+        elif cv == 12:  # Дама
             score += 3
-        elif cv == 11:
+        elif cv == 11:  # Валет
             score += 2
         elif 6 <= cv <= 10:
             score += cv
+    
+    # Коррекция тузов: если перебор, туз становится 1
     while score > 21 and aces > 0:
         score -= 10
         aces -= 1
+    
     return score
+
+def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
+    """Проверяет, завершена ли игра"""
+    if state in ["4", "5"]:
+        return True
+    
+    if p_score == 21 or d_score == 21:
+        return True
+    
+    if p_score > 21 or d_score > 21:
+        return True
+    
+    if dealer_cards and len(dealer_cards) >= 2 and d_score >= 17:
+        return True
+    
+    return False
 
 def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state):
     p_hand = format_cards(player_cards)
     d_hand = format_cards(dealer_cards)
     total = p_score + d_score if dealer_cards else p_score
     
-    is_finished = False
-    if state in ["4", "5"]:
-        is_finished = True
-    if dealer_cards and len(dealer_cards) >= 2:
-        if p_score > 21 or d_score > 21:
-            is_finished = True
-        if p_score == 21 or d_score == 21:
-            is_finished = True
-        if len(dealer_cards) >= 3 and d_score >= 17:
-            is_finished = True
+    if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
+        if p_score > 21:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+        if d_score > 21:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+        if p_score == 21:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+        if d_score == 21:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+        if p_score > d_score:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+        if d_score > p_score:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
     
-    if not is_finished:
-        if not dealer_cards:
-            arrow = "◀️"
-        else:
-            arrow = "▶️"
-        return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
+    if not dealer_cards:
+        arrow = "◀️"
+    else:
+        arrow = "▶️"
     
-    if p_score > 21:
-        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
-    if d_score > 21:
-        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
-    if p_score > d_score:
-        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
-    if d_score > p_score:
-        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
-    return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
+    return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
 
 def send_message(text):
     try:
@@ -254,16 +276,9 @@ def main():
                             
                             print(f"🔄 {msg}", flush=True)
                             
-                            if state in ["4", "5"]:
-                                print("🏁 Игра завершена (STATE)", flush=True)
-                                break
-                            if dealer_cards and len(dealer_cards) >= 2:
-                                if p_score > 21 or d_score > 21 or p_score == 21 or d_score == 21:
-                                    print("🏁 Игра завершена (победитель)", flush=True)
-                                    break
-                                if len(dealer_cards) >= 3 and d_score >= 17:
-                                    print("🏁 Игра завершена (дилер набрал)", flush=True)
-                                    break
+                            if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
+                                game_finished = True
+                                print(f"🏁 Игра завершена", flush=True)
                     
                     time.sleep(0.3)
                     
