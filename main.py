@@ -10,16 +10,22 @@ from concurrent.futures import ThreadPoolExecutor
 # НАСТРОЙКИ - БЕРУТСЯ ТОЛЬКО С ХОСТИНГА!
 # =====================================================================
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-CHAT_ID = os.getenv('CHAT_ID')  # ТА ЖЕ ПЕРЕМЕННАЯ ЧТО И В КЛАССИКЕ
+CHAT_ID_RAW = os.getenv('CHAT_ID')
 
 # Проверяем, что переменные загружены
-if not BOT_TOKEN or not CHAT_ID:
-    print("❌ ОШИБКА: BOT_TOKEN или CHAT_ID не найдены в переменных окружения!", flush=True)
-    print("⚠️ Добавьте переменные на хостинге!", flush=True)
+if not BOT_TOKEN or not CHAT_ID_RAW:
+    print("❌ ОШИБКА: BOT_TOKEN или CHAT_ID не найдены!", flush=True)
     exit(1)
 
-print(f"✅ BOT_TOKEN загружен с хостинга", flush=True)
-print(f"✅ CHAT_ID загружен с хостинга: {CHAT_ID}", flush=True)
+# Пробуем преобразовать CHAT_ID в число
+try:
+    CHAT_ID = int(CHAT_ID_RAW)
+    print(f"✅ CHAT_ID преобразован в число: {CHAT_ID}", flush=True)
+except:
+    CHAT_ID = CHAT_ID_RAW
+    print(f"✅ CHAT_ID оставлен как строка: {CHAT_ID}", flush=True)
+
+print(f"✅ BOT_TOKEN загружен: {BOT_TOKEN[:5]}...", flush=True)
 print("=" * 60, flush=True)
 
 # =====================================================================
@@ -49,8 +55,6 @@ processed_game_ids = set()
 checked_game_ids = set()
 completed_count = 0
 game_states = {}
-
-# Блокировка для потокобезопасности
 state_lock = threading.Lock()
 
 prediction = {
@@ -76,19 +80,20 @@ def send_telegram_message(text):
             "text": text,
             "parse_mode": None
         }
+        
+        print(f"📤 Отправка: CHAT_ID={CHAT_ID}, текст={text[:30]}...", flush=True)
         resp = requests.post(url, json=payload, timeout=5)
+        
         if resp.status_code == 200:
             return resp.json().get("result", {}).get("message_id")
         else:
-            print(f"❌ Ошибка отправки: {resp.status_code}", flush=True)
-            print(f"📄 Ответ: {resp.text}", flush=True)
+            print(f"❌ Ошибка {resp.status_code}: {resp.text}", flush=True)
             return None
     except Exception as e:
         print(f"❌ Ошибка отправки: {e}", flush=True)
         return None
 
 def edit_telegram_message(message_id, text):
-    """Редактирование сообщения в Telegram"""
     try:
         url = f"{API_URL}/editMessageText"
         payload = {
@@ -98,6 +103,8 @@ def edit_telegram_message(message_id, text):
             "parse_mode": None
         }
         resp = requests.post(url, json=payload, timeout=5)
+        if resp.status_code != 200:
+            print(f"❌ Ошибка редактирования {resp.status_code}: {resp.text}", flush=True)
         return resp.status_code == 200
     except Exception as e:
         print(f"❌ Ошибка редактирования: {e}", flush=True)
@@ -166,8 +173,8 @@ def update_message(suffix=""):
     game_num = prediction["game_num"]
     suit = prediction["suit"]
     
-    msg = f"БАККАРА #N{game_num}\n"
-    msg += f"🂠 Масть: {SUITS[suit]['symbol']} {SUITS[suit]['name']}"
+    # УПРОЩЁННЫЙ ТЕКСТ БЕЗ ПРОБЛЕМНЫХ СИМВОЛОВ
+    msg = f"БАККАРА #{game_num} | Масть: {SUITS[suit]['name']}"
     if suffix:
         msg += f" {suffix}"
     
@@ -193,7 +200,6 @@ def reset_prediction():
     prediction["checked"] = False
 
 def handle_game_update(gid, is_finished):
-    """Фоновая обработка игры"""
     global completed_count
     
     suits, _ = fetch_game_details(gid)
@@ -201,14 +207,12 @@ def handle_game_update(gid, is_finished):
         return
 
     with state_lock:
-        # 1. Добавляем в историю (первые 2 карты)
         if gid not in processed_game_ids and len(suits) >= 2:
             processed_game_ids.add(gid)
             history.extend(suits[:2])
             completed_count += 1
             print(f"⚡ История: Игра #{gid} | Карт: {suits[:2]} | Счетчик: {completed_count}")
 
-        # 2. Проверяем прогноз (все карты до 3, либо если игра завершилась с 2 картами)
         if gid not in checked_game_ids and (len(suits) >= 3 or is_finished):
             checked_game_ids.add(gid)
             
@@ -264,7 +268,7 @@ def create_prediction():
     prediction["checked"] = False
     
     update_message()
-    print(f"📊 Прогноз на БАККАРА #N{next_game_num}, масть {SUITS[best_suit]['name']}, база: {completed_count}")
+    print(f"📊 Прогноз на БАККАРА #{next_game_num}, масть {SUITS[best_suit]['name']}, база: {completed_count}")
 
 # =====================================================================
 # ОСНОВНОЙ ЦИКЛ
@@ -272,10 +276,9 @@ def create_prediction():
 def main():
     global completed_count
     
-    print("🚀 Запуск бота БАККАРА (каждую минуту)...", flush=True)
+    print("🚀 Запуск бота БАККАРА...", flush=True)
     print("=" * 60, flush=True)
     
-    # Начальный сбор истории
     try:
         resp = requests.get(LIST_URL, headers=HEADERS, timeout=10, proxies=NO_PROXY)
         games = resp.json().get("Value", [])
@@ -301,7 +304,6 @@ def main():
             resp = requests.get(LIST_URL, headers=HEADERS, timeout=5, proxies=NO_PROXY)
             games = resp.json().get("Value", [])
             
-            # Отслеживаем изменения состояния игр
             for g in games:
                 gid = g.get("I")
                 scores = g.get("SC", {})
@@ -317,7 +319,6 @@ def main():
                     game_states[gid] = (s1, s2, is_finished)
                     executor.submit(handle_game_update, gid, is_finished)
             
-            # Создание прогноза
             if not prediction["active"] or prediction["checked"]:
                 create_prediction()
             
