@@ -3,7 +3,6 @@ import json
 import time
 import os
 import datetime
-import telebot
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -35,7 +34,7 @@ HEADERS = {
 }
 NO_PROXY = {"http": None, "https": None}
 
-bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
+API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 SUITS = {
     0: {"name": "Пики", "symbol": "♠️"},
@@ -65,9 +64,48 @@ prediction = {
 executor = ThreadPoolExecutor(max_workers=4)
 
 # =====================================================================
+# ФУНКЦИИ ДЛЯ РАБОТЫ С ТЕЛЕГРАМ (БЕЗ TELEBOT)
+# =====================================================================
+def send_telegram_message(text):
+    """Отправка сообщения в Telegram через API"""
+    try:
+        url = f"{API_URL}/sendMessage"
+        payload = {
+            "chat_id": CHANNEL_ID,
+            "text": text,
+            "parse_mode": None
+        }
+        resp = requests.post(url, json=payload, timeout=5)
+        if resp.status_code == 200:
+            return resp.json().get("result", {}).get("message_id")
+        else:
+            print(f"❌ Ошибка отправки: {resp.status_code}", flush=True)
+            return None
+    except Exception as e:
+        print(f"❌ Ошибка отправки: {e}", flush=True)
+        return None
+
+def edit_telegram_message(message_id, text):
+    """Редактирование сообщения в Telegram"""
+    try:
+        url = f"{API_URL}/editMessageText"
+        payload = {
+            "chat_id": CHANNEL_ID,
+            "message_id": message_id,
+            "text": text,
+            "parse_mode": None
+        }
+        resp = requests.post(url, json=payload, timeout=5)
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"❌ Ошибка редактирования: {e}", flush=True)
+        return False
+
+# =====================================================================
 # ФУНКЦИИ
 # =====================================================================
 def get_utc_game_number():
+    """Номер игры для баккары (каждую минуту)"""
     now = datetime.datetime.now(datetime.timezone.utc)
     return (now.hour * 60) + now.minute + 1
 
@@ -134,12 +172,13 @@ def update_message(suffix=""):
     
     try:
         if prediction["message_id"] is None:
-            sent = bot.send_message(CHANNEL_ID, msg, parse_mode=None)
-            prediction["message_id"] = sent.message_id
-            print(f"📤 Отправлено: {msg}")
+            msg_id = send_telegram_message(msg)
+            if msg_id:
+                prediction["message_id"] = msg_id
+                print(f"📤 Отправлено: {msg}")
         else:
-            bot.edit_message_text(chat_id=CHANNEL_ID, message_id=prediction["message_id"], text=msg)
-            print(f"✏️ Обновлено: {msg}")
+            if edit_telegram_message(prediction["message_id"], msg):
+                print(f"✏️ Обновлено: {msg}")
     except Exception as e:
         prediction["message_id"] = None
 
@@ -231,7 +270,7 @@ def create_prediction():
 def main():
     global completed_count
     
-    print("🚀 Запуск бота БАККАРА (оптимизированный)...", flush=True)
+    print("🚀 Запуск бота БАККАРА (каждую минуту)...", flush=True)
     print("=" * 60, flush=True)
     
     # Начальный сбор истории
