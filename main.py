@@ -10,16 +10,17 @@ from concurrent.futures import ThreadPoolExecutor
 # НАСТРОЙКИ - БЕРУТСЯ ТОЛЬКО С ХОСТИНГА!
 # =====================================================================
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-CHANNEL_ID = os.getenv('CHANNEL_ID')
+CHAT_ID = os.getenv('CHAT_ID')  # ТА ЖЕ ПЕРЕМЕННАЯ ЧТО И В КЛАССИКЕ
 
 # Проверяем, что переменные загружены
-if not BOT_TOKEN or not CHANNEL_ID:
-    print("❌ ОШИБКА: BOT_TOKEN или CHANNEL_ID не найдены в переменных окружения!", flush=True)
+if not BOT_TOKEN or not CHAT_ID:
+    print("❌ ОШИБКА: BOT_TOKEN или CHAT_ID не найдены в переменных окружения!", flush=True)
     print("⚠️ Добавьте переменные на хостинге!", flush=True)
     exit(1)
 
 print(f"✅ BOT_TOKEN загружен с хостинга", flush=True)
-print(f"✅ CHANNEL_ID загружен с хостинга", flush=True)
+print(f"✅ CHAT_ID загружен с хостинга: {CHAT_ID}", flush=True)
+print("=" * 60, flush=True)
 
 # =====================================================================
 # ОСТАЛЬНЫЕ НАСТРОЙКИ
@@ -64,14 +65,14 @@ prediction = {
 executor = ThreadPoolExecutor(max_workers=4)
 
 # =====================================================================
-# ФУНКЦИИ ДЛЯ РАБОТЫ С ТЕЛЕГРАМ (БЕЗ TELEBOT)
+# ФУНКЦИИ ДЛЯ РАБОТЫ С ТЕЛЕГРАМ
 # =====================================================================
 def send_telegram_message(text):
     """Отправка сообщения в Telegram через API"""
     try:
         url = f"{API_URL}/sendMessage"
         payload = {
-            "chat_id": CHANNEL_ID,
+            "chat_id": CHAT_ID,
             "text": text,
             "parse_mode": None
         }
@@ -80,6 +81,7 @@ def send_telegram_message(text):
             return resp.json().get("result", {}).get("message_id")
         else:
             print(f"❌ Ошибка отправки: {resp.status_code}", flush=True)
+            print(f"📄 Ответ: {resp.text}", flush=True)
             return None
     except Exception as e:
         print(f"❌ Ошибка отправки: {e}", flush=True)
@@ -90,7 +92,7 @@ def edit_telegram_message(message_id, text):
     try:
         url = f"{API_URL}/editMessageText"
         payload = {
-            "chat_id": CHANNEL_ID,
+            "chat_id": CHAT_ID,
             "message_id": message_id,
             "text": text,
             "parse_mode": None
@@ -102,10 +104,9 @@ def edit_telegram_message(message_id, text):
         return False
 
 # =====================================================================
-# ФУНКЦИИ
+# ФУНКЦИИ БОТА
 # =====================================================================
 def get_utc_game_number():
-    """Номер игры для баккары (каждую минуту)"""
     now = datetime.datetime.now(datetime.timezone.utc)
     return (now.hour * 60) + now.minute + 1
 
@@ -180,6 +181,7 @@ def update_message(suffix=""):
             if edit_telegram_message(prediction["message_id"], msg):
                 print(f"✏️ Обновлено: {msg}")
     except Exception as e:
+        print(f"❌ Ошибка обновления: {e}", flush=True)
         prediction["message_id"] = None
 
 def reset_prediction():
@@ -311,10 +313,8 @@ def main():
                 last_state = game_states.get(gid, (0, 0, False))
                 last_s1, last_s2, last_finished = last_state
                 
-                # Если счет изменился (игра началась) или статус изменился (завершилась)
                 if (s1 > 0 or s2 > 0 or is_finished) and not (s1 == last_s1 and s2 == last_s2 and is_finished == last_finished):
                     game_states[gid] = (s1, s2, is_finished)
-                    # Запускаем обработку в фоне, не блокируя цикл
                     executor.submit(handle_game_update, gid, is_finished)
             
             # Создание прогноза
