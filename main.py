@@ -1,8 +1,9 @@
+import os
+import sys
 import requests
 import json
-import time
-import os
 import re
+import time
 from datetime import datetime, timedelta
 import pytz
 
@@ -12,44 +13,138 @@ import pytz
 MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 
 # =====================================================================
-# НАСТРОЙКИ
+# ПРИНУДИТЕЛЬНЫЙ ВЫВОД ЛОГОВ
+# =====================================================================
+sys.stdout.flush()
+print("=" * 60, flush=True)
+print("🃏 ПАРСЕР БАККАРА (ЛАЙВ)", flush=True)
+print("=" * 60, flush=True)
+
+# =====================================================================
+# ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
 # =====================================================================
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-CHANNEL_ID = os.getenv('CHANNEL_ID')
+if not BOT_TOKEN:
+    BOT_TOKEN = os.getenv('BOT_TOKEN_PROGNOZ')
 
-if not BOT_TOKEN or not CHANNEL_ID:
-    print("❌ Ошибка: BOT_TOKEN или CHANNEL_ID не заданы!", flush=True)
+CHANNEL_STATS = os.getenv('CHANNEL_STATS_ID')
+CHANNEL_PROGNOZ = os.getenv('CHANNEL_PROGNOZ_ID')
+
+print("🔍 ДИАГНОСТИКА ПЕРЕМЕННЫХ:", flush=True)
+print(f"BOT_TOKEN: {BOT_TOKEN[:5] if BOT_TOKEN else 'НЕ ЗАДАН'}", flush=True)
+print(f"CHANNEL_STATS_ID: {CHANNEL_STATS if CHANNEL_STATS else 'НЕ ЗАДАН'}", flush=True)
+print(f"CHANNEL_PROGNOZ_ID: {CHANNEL_PROGNOZ if CHANNEL_PROGNOZ else 'НЕ ЗАДАН'}", flush=True)
+print("=" * 60, flush=True)
+
+if not BOT_TOKEN or not CHANNEL_STATS or not CHANNEL_PROGNOZ:
+    print("❌ ОШИБКА: переменные окружения не заданы!", flush=True)
     exit(1)
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
-    "Referer": "https://melbet-38497.pro/",
-}
+print("✅ Все переменные заданы!", flush=True)
 
-# Список игр Баккара
-LIST_URL = "https://melbet-38497.pro/service-api/LiveFeed/Get1x2_VZip?sports=236&champs=2050671&count=40&gr=1521&mode=4&country=192&partner=8&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
-DETAIL_URL_TEMPLATE = "https://melbet-38497.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=8&topGroups=&country=192&marketType=1&isNewBuilder=true"
+# =====================================================================
+# НАСТРОЙКИ
+# =====================================================================
+OFFSET_FILE = "offset_baccarat.txt"
+PROCESSED_GAMES = set()
+messages = {}
 
-SUITS = {
-    0: "♠️",
-    1: "♣️",
-    2: "♦️",
-    3: "♥️"
-}
-
+# Масти для баккары
+SUITS = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {
     1: "A", 2: "2", 3: "3", 4: "4", 5: "5",
     6: "6", 7: "7", 8: "8", 9: "9", 10: "10",
     11: "J", 12: "Q", 13: "K"
 }
 
-processed_games = set()
-messages = {}
-
 # =====================================================================
 # ФУНКЦИИ
 # =====================================================================
+def get_updates(offset):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+    params = {"offset": offset, "timeout": 30}
+    try:
+        response = requests.get(url, params=params, timeout=35)
+        return response.json()
+    except Exception as e:
+        print(f"❌ Ошибка getUpdates: {e}", flush=True)
+        return {}
+
+def send_message(text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": CHANNEL_PROGNOZ, "text": text, "parse_mode": "HTML"}
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code == 200:
+            return response.json()["result"]["message_id"]
+        else:
+            print(f"❌ Ошибка отправки: {response.status_code} - {response.text}", flush=True)
+            return None
+    except Exception as e:
+        print(f"❌ Ошибка отправки: {e}", flush=True)
+        return None
+
+def edit_message(message_id, text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText"
+    payload = {"chat_id": CHANNEL_PROGNOZ, "message_id": message_id, "text": text, "parse_mode": "HTML"}
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code == 200:
+            return True
+        else:
+            print(f"❌ Ошибка редактирования: {response.status_code} - {response.text}", flush=True)
+            return False
+    except Exception as e:
+        print(f"❌ Ошибка редактирования: {e}", flush=True)
+        return False
+
+def parse_game(text):
+    """Парсит игру баккара"""
+    try:
+        game_match = re.search(r'#N(\d+)', text)
+        if not game_match:
+            return None
+        game_number = int(game_match.group(1))
+        
+        clean_text = text.replace('✅', '').replace('❌', '').replace('🔰', '')
+        
+        parts = clean_text.split('-')
+        if len(parts) < 2:
+            return None
+        
+        player_part = parts[0].strip()
+        dealer_part = parts[1].strip()
+        
+        player_match = re.search(r'(\d+)\(([^)]+)\)', player_part)
+        if not player_match:
+            return None
+        player_cards_str = player_match.group(2).strip()
+        
+        dealer_match = re.search(r'(\d+)\(([^)]+)\)', dealer_part)
+        dealer_cards_str = dealer_match.group(2).strip() if dealer_match else ""
+        
+        player_cards = []
+        for card in re.findall(r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)', player_cards_str):
+            rank, suit = card
+            suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
+            player_cards.append({"rank": rank, "suit": suit})
+        
+        dealer_cards = []
+        for card in re.findall(r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)', dealer_cards_str):
+            rank, suit = card
+            suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
+            dealer_cards.append({"rank": rank, "suit": suit})
+        
+        return {
+            "number": game_number,
+            "player_cards": player_cards,
+            "dealer_cards": dealer_cards,
+            "text": text
+        }
+    except Exception as e:
+        print(f"❌ Ошибка парсинга: {e}", flush=True)
+        return None
+
 def get_game_number():
     """Номер игры от 1 до 1440 (каждую минуту, старт в 03:00)"""
     now = datetime.now(MOSCOW_TZ)
@@ -60,51 +155,10 @@ def get_game_number():
     game_number = int(diff_minutes) % 1440 + 1
     return game_number
 
-def get_active_games():
-    """Получает список активных игр Баккара"""
-    try:
-        response = requests.get(LIST_URL, headers=HEADERS, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            games = data.get("Value", [])
-            
-            active_games = []
-            for game in games:
-                game_id = game.get("I")
-                if game_id and str(game_id) not in processed_games:
-                    active_games.append(game)
-            
-            print(f"📊 Найдено активных игр: {len(active_games)}", flush=True)
-            return active_games
-        else:
-            print(f"⚠️ Статус API: {response.status_code}", flush=True)
-    except Exception as e:
-        print(f"❌ Ошибка: {e}", flush=True)
-    return []
-
-def get_game_data(game_id):
-    """Получает данные конкретной игры"""
-    try:
-        url = DETAIL_URL_TEMPLATE.format(game_id=game_id)
-        response = requests.get(url, headers=HEADERS, timeout=5)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"⚠️ Статус игры {game_id}: {response.status_code}", flush=True)
-    except Exception as e:
-        print(f"❌ Ошибка игры {game_id}: {e}", flush=True)
-    return None
-
 def format_cards(cards):
-    """Форматирует карты для вывода"""
     if not cards:
         return ""
-    result = []
-    for card in cards:
-        suit = SUITS.get(card.get("S", 0), "?")
-        rank = RANKS.get(card.get("R", 0), "?")
-        result.append(f"{rank}{suit}")
-    return "".join(result)
+    return "".join(f"{c['rank']}{c['suit']}" for c in cards)
 
 def calculate_score(cards):
     """Считает очки в баккара (последняя цифра суммы)"""
@@ -112,27 +166,23 @@ def calculate_score(cards):
         return 0
     
     score = 0
+    rank_values = {"A": 1, "J": 0, "Q": 0, "K": 0}
     for card in cards:
-        rank = card.get("R", 0)
-        if rank == 1:  # Туз = 1
-            score += 1
-        elif 2 <= rank <= 9:
-            score += rank
-        else:  # 10, J, Q, K = 0
-            score += 0
+        rank = card.get("rank", "")
+        if rank.isdigit():
+            score += int(rank)
+        elif rank in rank_values:
+            score += rank_values[rank]
     
-    return score % 10  # Берём последнюю цифру
+    return score % 10
 
-def is_game_finished(state):
-    """Проверяет, завершена ли игра"""
-    return state == "Игра завершена"
+def is_game_finished(text):
+    return "✅" in text or "❌" in text or "🔰" in text
 
-def build_message(game_num, player_cards, banker_cards, p_score, b_score):
-    """Формирует сообщение для отправки"""
+def build_message(game_num, player_cards, dealer_cards, p_score, b_score):
     p_hand = format_cards(player_cards)
-    b_hand = format_cards(banker_cards)
+    b_hand = format_cards(dealer_cards)
     
-    # Определяем результат
     if p_score > b_score:
         result = "✅"
     elif b_score > p_score:
@@ -142,106 +192,134 @@ def build_message(game_num, player_cards, banker_cards, p_score, b_score):
     
     return f"#N{game_num}. {p_score}({p_hand}) - {result}{b_score}({b_hand}) #T{p_score + b_score}"
 
-def send_message(text):
-    """Отправляет сообщение в Telegram"""
-    try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        payload = {"chat_id": CHANNEL_ID, "text": text}
-        response = requests.post(url, json=payload, timeout=5)
-        if response.status_code == 200:
-            return response.json()["result"]["message_id"]
-    except Exception as e:
-        print(f"❌ Ошибка отправки: {e}", flush=True)
-    return None
+def get_offset():
+    if os.path.exists(OFFSET_FILE):
+        try:
+            with open(OFFSET_FILE, "r") as f:
+                return int(f.read().strip())
+        except:
+            return 0
+    return 0
 
-def edit_message(message_id, text):
-    """Редактирует сообщение в Telegram"""
+def save_offset(offset):
+    with open(OFFSET_FILE, "w") as f:
+        f.write(str(offset))
+
+def load_recent_messages():
+    """Загружает последние сообщения из канала"""
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+    params = {"chat_id": CHANNEL_STATS, "limit": 100}
     try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText"
-        payload = {"chat_id": CHANNEL_ID, "message_id": message_id, "text": text}
-        response = requests.post(url, json=payload, timeout=5)
-        return response.status_code == 200
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            messages = []
+            for update in data.get("result", []):
+                post = update.get("channel_post")
+                if post and post.get("text"):
+                    messages.append(post.get("text"))
+            return messages
     except Exception as e:
-        print(f"❌ Ошибка редактирования: {e}", flush=True)
-        return False
+        print(f"❌ Ошибка загрузки истории: {e}", flush=True)
+    return []
 
 # =====================================================================
 # ОСНОВНОЙ ЦИКЛ
 # =====================================================================
 def main():
-    print("🔄 ПАРСЕР БАККАРА ЗАПУЩЕН", flush=True)
-    print(f"📢 Канал: {CHANNEL_ID}", flush=True)
+    print("🔄 ПАРСЕР БАККАРА (ЛАЙВ) ЗАПУЩЕН", flush=True)
+    print(f"📊 Читает канал: {CHANNEL_STATS}", flush=True)
+    print(f"📤 Отправляет в: {CHANNEL_PROGNOZ}", flush=True)
     print("=" * 60, flush=True)
+    print("📌 Правила:", flush=True)
+    print("   - Парсим игры баккара из канала", flush=True)
+    print("   - Форматируем и постим в канал прогнозов", flush=True)
+    print("=" * 60, flush=True)
+    
+    offset = get_offset()
+    
+    print("📥 Загрузка последних сообщений из канала...", flush=True)
+    all_messages = load_recent_messages()
+    print(f"📥 Загружено сообщений: {len(all_messages)}", flush=True)
     
     while True:
         try:
-            active_games = get_active_games()
+            updates = get_updates(offset)
             
-            if not active_games:
-                print("💤 Нет активных игр, ждём 5 секунд...", flush=True)
-                time.sleep(5)
-                continue
-            
-            for game in active_games:
-                game_id = str(game.get("I"))
+            for update in updates.get("result", []):
+                offset = update["update_id"] + 1
+                save_offset(offset)
                 
-                if game_id in processed_games:
+                channel_post = update.get("channel_post")
+                edited_post = update.get("edited_channel_post")
+                post = channel_post if channel_post else edited_post
+                if not post:
                     continue
                 
-                data = get_game_data(game_id)
-                if not data:
+                chat_id = post.get("chat", {}).get("id")
+                if str(chat_id) != str(CHANNEL_STATS):
                     continue
                 
-                # Парсим карты игрока и банка
-                sc = data.get("Value", {}).get("SC", {})
-                fs = sc.get("FS", {})
-                
-                player_cards = []
-                banker_cards = []
-                state = sc.get("CPS", "")
-                
-                # Ищем карты игрока (P) и банка (B)
-                for item in sc.get("S", []):
-                    if item.get("Key") == "P":
-                        player_cards = json.loads(item.get("Value", "[]"))
-                    if item.get("Key") == "B":
-                        banker_cards = json.loads(item.get("Value", "[]"))
-                
-                if not player_cards and not banker_cards:
+                text = post.get("text", "")
+                if not text or "#N" not in text:
                     continue
                 
-                game_number = get_game_number()
+                game_id_match = re.search(r'#N(\d+)', text)
+                if not game_id_match:
+                    continue
+                game_number = int(game_id_match.group(1))
                 
+                all_messages.append(text)
+                if len(all_messages) > 500:
+                    all_messages = all_messages[-500:]
+                
+                if game_number in PROCESSED_GAMES:
+                    continue
+                
+                if not is_game_finished(text):
+                    print(f"⏳ Ожидание финальной раздачи для #N{game_number}", flush=True)
+                    continue
+                
+                print(f"📥 {text[:50]}...", flush=True)
+                
+                game_data = parse_game(text)
+                if not game_data:
+                    print(f"❌ Не удалось распарсить #N{game_number}", flush=True)
+                    continue
+                
+                # Формируем сообщение для отправки
+                game_num = game_data["number"]
+                player_cards = game_data["player_cards"]
+                dealer_cards = game_data["dealer_cards"]
                 p_score = calculate_score(player_cards) if player_cards else 0
-                b_score = calculate_score(banker_cards) if banker_cards else 0
+                b_score = calculate_score(dealer_cards) if dealer_cards else 0
                 
-                msg = build_message(game_number, player_cards, banker_cards, p_score, b_score)
+                msg = build_message(game_num, player_cards, dealer_cards, p_score, b_score)
                 
-                if game_id in messages:
-                    edit_message(messages[game_id], msg)
-                    print(f"🔄 Обновлена игра {game_id}: {msg}", flush=True)
+                # Отправляем или редактируем
+                if game_number in messages:
+                    edit_message(messages[game_number], msg)
+                    print(f"🔄 Обновлена игра {game_number}: {msg}", flush=True)
                 else:
                     msg_id = send_message(msg)
                     if msg_id:
-                        messages[game_id] = msg_id
-                        print(f"📤 Новая игра {game_id}: {msg}", flush=True)
+                        messages[game_number] = msg_id
+                        print(f"📤 Новая игра {game_number}: {msg}", flush=True)
                 
-                if is_game_finished(state):
-                    processed_games.add(game_id)
-                    print(f"🏁 Игра {game_id} завершена", flush=True)
+                if is_game_finished(text):
+                    PROCESSED_GAMES.add(game_number)
+                    print(f"🏁 Игра {game_number} завершена", flush=True)
                 
                 time.sleep(0.3)
             
-            # Очистка кэша
-            if len(processed_games) > 200:
-                processed_games.clear()
-                print("🗑️ Кэш обработанных игр очищен", flush=True)
+            if len(PROCESSED_GAMES) > 500:
+                PROCESSED_GAMES.clear()
             
-            time.sleep(2)
+            time.sleep(5)
             
         except Exception as e:
-            print(f"❌ Критическая ошибка: {e}", flush=True)
-            time.sleep(5)
+            print(f"❌ Ошибка: {e}", flush=True)
+            time.sleep(10)
 
 if __name__ == "__main__":
     main()
