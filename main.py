@@ -12,12 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 CHAT_ID_RAW = os.getenv('CHAT_ID')
 
-# Проверяем, что переменные загружены
 if not BOT_TOKEN or not CHAT_ID_RAW:
     print("❌ ОШИБКА: BOT_TOKEN или CHAT_ID не найдены!", flush=True)
     exit(1)
 
-# Пробуем преобразовать CHAT_ID в число
 try:
     CHAT_ID = int(CHAT_ID_RAW)
     print(f"✅ CHAT_ID преобразован в число: {CHAT_ID}", flush=True)
@@ -69,7 +67,7 @@ prediction = {
 executor = ThreadPoolExecutor(max_workers=4)
 
 # =====================================================================
-# ФУНКЦИИ ДЛЯ РАБОТЫ С ТЕЛЕГРАМ
+# ФУНКЦИИ ДЛЯ РАБОТЫ С ТЕЛЕГРАМ - parse_mode УБРАН!
 # =====================================================================
 def send_telegram_message(text):
     """Отправка сообщения в Telegram через API"""
@@ -77,9 +75,9 @@ def send_telegram_message(text):
         url = f"{API_URL}/sendMessage"
         payload = {
             "chat_id": CHAT_ID,
-            "text": text,
-            "parse_mode": None
+            "text": text
         }
+        # parse_mode НЕ ПЕРЕДАЁМ!
         
         print(f"📤 Отправка: CHAT_ID={CHAT_ID}, текст={text[:30]}...", flush=True)
         resp = requests.post(url, json=payload, timeout=5)
@@ -94,14 +92,16 @@ def send_telegram_message(text):
         return None
 
 def edit_telegram_message(message_id, text):
+    """Редактирование сообщения в Telegram"""
     try:
         url = f"{API_URL}/editMessageText"
         payload = {
             "chat_id": CHAT_ID,
             "message_id": message_id,
-            "text": text,
-            "parse_mode": None
+            "text": text
         }
+        # parse_mode НЕ ПЕРЕДАЁМ!
+        
         resp = requests.post(url, json=payload, timeout=5)
         if resp.status_code != 200:
             print(f"❌ Ошибка редактирования {resp.status_code}: {resp.text}", flush=True)
@@ -173,7 +173,6 @@ def update_message(suffix=""):
     game_num = prediction["game_num"]
     suit = prediction["suit"]
     
-    # УПРОЩЁННЫЙ ТЕКСТ БЕЗ ПРОБЛЕМНЫХ СИМВОЛОВ
     msg = f"БАККАРА #{game_num} | Масть: {SUITS[suit]['name']}"
     if suffix:
         msg += f" {suffix}"
@@ -222,7 +221,7 @@ def handle_game_update(gid, is_finished):
                 if 1 <= offset <= 3:
                     all_check_suits = suits[:3]
                     if prediction["suit"] in all_check_suits:
-                        emoji_map = {1: "✅0️⃣", 2: "✅1️⃣", 3: "✅2️⃣"}
+                        emoji_map = {1: "✅0", 2: "✅1", 3: "✅2"}
                         update_message(emoji_map[offset])
                         print(f"✅ Успех на позиции {offset-1} (игра #{gid})")
                         prediction["checked"] = True
@@ -276,7 +275,7 @@ def create_prediction():
 def main():
     global completed_count
     
-    print("🚀 Запуск бота БАККАРА...", flush=True)
+    print("🚀 Запуск бота БАККАРА (каждую минуту)...", flush=True)
     print("=" * 60, flush=True)
     
     try:
