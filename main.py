@@ -1,6 +1,5 @@
 import requests
 import json
-import re
 import time
 from datetime import datetime, timedelta
 import pytz
@@ -11,7 +10,7 @@ import sys
 # =====================================================================
 sys.stdout.flush()
 print("=" * 60, flush=True)
-print("🃏 ПАРСЕР БАККАРА - ЛАЙВ (РЕАЛЬНОЕ ВРЕМЯ)", flush=True)
+print("🃏 ПАРСЕР БАККАРА - ЧИСТАЯ ВЕРСИЯ", flush=True)
 print("=" * 60, flush=True)
 
 # =====================================================================
@@ -21,24 +20,22 @@ BOT_TOKEN = "5482422004:AAEKX1vcjzGbCYFrRL1MqKj4VymTGYwN7-c"
 CHAT_ID = "-1003477065559"
 
 MOSCOW_TZ = pytz.timezone('Europe/Moscow')
-
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
-messages = {}  # {game_id: message_id}
-processed_games = set()
-game_state = {}  # {game_id: {"active": True, "finished": False}}
 
-SUITS_NAMES = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
+messages = {}
+processed_games = set()
+
+SUITS = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {1: "A", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K"}
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json, text/plain, */*",
+    "Accept": "application/json",
     "Referer": "https://melbet-38497.pro/ru/live/baccarat/",
-    "Cookie": "platform_type=desktop; SESSION=34219176f69eace1b636911e2de9a15e; lng=ru; cookies_agree_type=3; tzo=3; is12h=0; auid=uaJbk2qIgo2M+6ofAxNqAg==; _ym_isad=2; _ym_visorc=b; mdd=1; _ga_7JGWL9SV66=GS2.1.s1787331227$o3$g1$t1787331236$j51$l0$h1840256937; window_width=150; referral_values=%7B%22type%22%3A%22reflinkid%22%2C%22val%22%3A%22s_50970m_355c_%22%2C%22additional%22%3A%7B%22name_tag%22%3A%22tag%22%7D%7D; fatman_uuid=45f69ff0-ecb1-67d4-3ff2-3a45baafc739; che_g=777dc1b9-efbf-4728-947a-4a2992ef6da5; sh.session.id=684214c4-f09e-42da-9c1a-ea61b9aca91b; _ym_uid=1786989905737338437; _ym_d=1786989905; _ga=GA1.1.547872848.1786989906"
 }
 
 LIST_URL = "https://melbet-38497.pro/service-api/LiveFeed/Get1x2_VZip?sports=236&champs=2050671&count=40&gr=1521&mode=4&country=192&partner=8&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
-DETAIL_URL_TEMPLATE = "https://melbet-38497.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=8&topGroups=&country=192&marketType=1&isNewBuilder=true"
+DETAIL_URL = "https://melbet-38497.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=8&topGroups=&country=192&marketType=1&isNewBuilder=true"
 
 print("✅ Настройки загружены", flush=True)
 
@@ -51,60 +48,47 @@ def get_game_number():
     if now < start:
         start = start - timedelta(days=1)
     diff_minutes = (now - start).total_seconds() / 60
-    game_number = int(diff_minutes) % 1440 + 1
-    return game_number
+    return int(diff_minutes) % 1440 + 1
 
 def get_active_games():
-    """Получает все активные игры Баккара (включая незавершённые)"""
     try:
-        response = requests.get(LIST_URL, headers=HEADERS, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, dict) and "Value" in data:
-                games = data.get("Value", [])
-            elif isinstance(data, list):
-                games = data
-            else:
-                return []
-            
-            active_games = []
-            for game in games:
-                game_id = game.get("I")
-                if game_id and str(game_id) not in processed_games:
-                    active_games.append(game)
-            
-            return active_games
-        else:
-            print(f"⚠️ Статус API: {response.status_code}", flush=True)
-    except Exception as e:
-        print(f"❌ Ошибка: {e}", flush=True)
-    
-    return []
+        resp = requests.get(LIST_URL, headers=HEADERS, timeout=10)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        games = data.get("Value", []) if isinstance(data, dict) else []
+        active = []
+        for g in games:
+            gid = g.get("I")
+            if gid and str(gid) not in processed_games:
+                active.append(g)
+        return active
+    except:
+        return []
 
 def get_game_data(game_id):
     try:
-        url = DETAIL_URL_TEMPLATE.format(game_id=game_id)
-        response = requests.get(url, headers=HEADERS, timeout=5)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"⚠️ Статус игры {game_id}: {response.status_code}", flush=True)
-    except Exception as e:
-        print(f"❌ Ошибка игры {game_id}: {e}", flush=True)
+        url = DETAIL_URL.format(game_id=game_id)
+        resp = requests.get(url, headers=HEADERS, timeout=5)
+        if resp.status_code == 200:
+            return resp.json()
+    except:
+        pass
     return None
 
 def format_cards(cards):
     if not cards:
         return ""
-    result = []
+    out = []
     for c in cards:
         cs = c.get("CS", 0)
         cv = c.get("CV", 0)
-        suit = SUITS_NAMES.get(cs, "?")
+        if cv == 0 or cs == 0:
+            return None
+        suit = SUITS.get(cs, "?")
         rank = RANKS.get(cv, str(cv))
-        result.append(f"{rank}{suit}")
-    return "".join(result)
+        out.append(f"{rank}{suit}")
+    return "".join(out)
 
 def calculate_score(cards):
     if not cards:
@@ -112,93 +96,93 @@ def calculate_score(cards):
     score = 0
     for c in cards:
         cv = c.get("CV", 0)
+        if cv == 0:
+            return -1
         if cv == 1:
             score += 1
         elif 2 <= cv <= 9:
             score += cv
-        else:
-            score += 0
     return score % 10
 
-def is_game_finished(state):
-    """Проверяет, завершена ли игра"""
+def is_early_win(p_score, d_score):
+    return p_score in [8, 9] or d_score in [8, 9]
+
+def is_finished_by_state(state):
     return state == "Игра завершена"
+
+def get_game_type(p_score, d_score):
+    if p_score == d_score:
+        return "X"
+    if is_early_win(p_score, d_score):
+        return "R"
+    return "N"
 
 def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state):
     p_hand = format_cards(player_cards)
     d_hand = format_cards(dealer_cards)
-    total = p_score + d_score
+    if p_hand is None or d_hand is None:
+        return None
     
-    # Если игра завершена — ставим результат
-    if is_game_finished(state):
+    total = p_score + d_score
+    gtype = get_game_type(p_score, d_score)
+    
+    if is_finished_by_state(state) or is_early_win(p_score, d_score):
         if p_score > d_score:
             result = "✅"
         elif d_score > p_score:
             result = "❌"
         else:
             result = "🔰"
-        return f"#N{game_num}. {p_score}({p_hand}) - {result}{d_score}({d_hand}) #T{total}"
+        return f"#{gtype}{game_num}. {p_score}({p_hand}) - {result}{d_score}({d_hand}) #T{total}"
     
-    # Игра ещё идёт — показываем стрелку
-    if not dealer_cards:
-        arrow = "◀️"
-    else:
-        arrow = "▶️"
-    
-    return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
+    arrow = "▶️" if dealer_cards else "◀️"
+    return f"#{gtype}{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
 
 def send_message(text):
     try:
         r = requests.post(API + "/sendMessage", json={"chat_id": CHAT_ID, "text": text})
         if r.status_code == 200:
             return r.json()["result"]["message_id"]
-    except Exception as e:
-        print(f"❌ Ошибка отправки: {e}", flush=True)
+    except:
+        pass
     return None
 
-def edit_message(message_id, text):
+def edit_message(msg_id, text):
     try:
         url = f"{API}/editMessageText"
-        payload = {"chat_id": CHAT_ID, "message_id": message_id, "text": text}
-        r = requests.post(url, json=payload)
+        r = requests.post(url, json={"chat_id": CHAT_ID, "message_id": msg_id, "text": text})
         return r.status_code == 200
-    except Exception as e:
-        print(f"❌ Ошибка редактирования: {e}", flush=True)
+    except:
         return False
 
 # =====================================================================
-# ОСНОВНОЙ ЦИКЛ (ЛАЙВ)
+# ОСНОВНОЙ ЦИКЛ
 # =====================================================================
 def main():
-    global processed_games
-    
-    print("🔄 ПАРСЕР БАККАРА (ЛАЙВ) ЗАПУЩЕН", flush=True)
-    print("📌 Показываем все стадии игры в реальном времени", flush=True)
+    print("🔄 ПАРСЕР БАККАРА ЗАПУЩЕН", flush=True)
     print("=" * 60, flush=True)
     
     while True:
         try:
-            active_games = get_active_games()
-            
-            if not active_games:
+            games = get_active_games()
+            if not games:
                 time.sleep(2)
                 continue
             
-            for game in active_games:
-                game_id = str(game.get("I"))
-                
-                if game_id in processed_games:
+            for game in games:
+                gid = str(game.get("I"))
+                if gid in processed_games:
                     continue
                 
-                data = get_game_data(game_id)
+                data = get_game_data(gid)
                 if not data:
                     continue
                 
                 sc = data.get("Value", {}).get("SC", {})
+                state = sc.get("CPS", "")
                 
                 player_cards = []
                 dealer_cards = []
-                state = sc.get("CPS", "")
                 
                 for item in sc.get("S", []):
                     if item.get("Key") == "P":
@@ -215,38 +199,46 @@ def main():
                 if not player_cards:
                     continue
                 
-                game_number = get_game_number()
+                # Фильтр пустых карт
+                has_empty = False
+                for c in player_cards + dealer_cards:
+                    if c.get("CV", 0) == 0 or c.get("CS", 0) == 0:
+                        has_empty = True
+                        break
+                if has_empty:
+                    print(f"⏭️ Пропускаем {gid}: пустые карты", flush=True)
+                    continue
+                
+                game_num = get_game_number()
                 p_score = calculate_score(player_cards)
                 d_score = calculate_score(dealer_cards) if dealer_cards else 0
                 
-                msg = build_message(game_number, player_cards, dealer_cards, p_score, d_score, state)
+                msg = build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
+                if msg is None:
+                    continue
                 
-                # Если у игры уже есть сообщение — редактируем
-                if game_id in messages:
-                    edit_message(messages[game_id], msg)
-                    print(f"🔄 Обновлена игра {game_id}: {msg}", flush=True)
+                if gid in messages:
+                    edit_message(messages[gid], msg)
+                    print(f"🔄 Обновлена {gid}: {msg}", flush=True)
                 else:
-                    # Новое сообщение
-                    msg_id = send_message(msg)
-                    if msg_id:
-                        messages[game_id] = msg_id
-                        print(f"📤 Новая игра {game_id}: {msg}", flush=True)
+                    mid = send_message(msg)
+                    if mid:
+                        messages[gid] = mid
+                        print(f"📤 Новая {gid}: {msg}", flush=True)
                 
-                # Если игра завершена — закрываем
-                if is_game_finished(state):
-                    processed_games.add(game_id)
-                    print(f"🏁 Игра {game_id} завершена", flush=True)
+                if is_finished_by_state(state) or is_early_win(p_score, d_score):
+                    processed_games.add(gid)
+                    print(f"🏁 Завершена {gid}", flush=True)
                 
                 time.sleep(0.3)
             
             if len(processed_games) > 200:
                 processed_games.clear()
-                print("🗑️ Кэш обработанных игр очищен", flush=True)
             
             time.sleep(1)
             
         except Exception as e:
-            print(f"❌ Критическая ошибка: {e}", flush=True)
+            print(f"❌ Ошибка: {e}", flush=True)
             time.sleep(5)
 
 if __name__ == "__main__":
