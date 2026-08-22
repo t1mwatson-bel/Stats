@@ -8,11 +8,6 @@ from datetime import datetime, timedelta
 import pytz
 
 # =====================================================================
-# ЧАСОВОЙ ПОЯС (МОСКВА)
-# =====================================================================
-MOSCOW_TZ = pytz.timezone('Europe/Moscow')
-
-# =====================================================================
 # ПРИНУДИТЕЛЬНЫЙ ВЫВОД ЛОГОВ
 # =====================================================================
 sys.stdout.flush()
@@ -21,12 +16,9 @@ print("🃏 ПАРСЕР БАККАРА (ПРЯМОЙ ПАРСИНГ API)", flus
 print("=" * 60, flush=True)
 
 # =====================================================================
-# ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
+# ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ (ТОЛЬКО 2!)
 # =====================================================================
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-if not BOT_TOKEN:
-    BOT_TOKEN = os.getenv('BOT_TOKEN_PROGNOZ')
-
 CHANNEL_ID = os.getenv('CHANNEL_ID')
 
 print("🔍 ДИАГНОСТИКА ПЕРЕМЕННЫХ:", flush=True)
@@ -35,7 +27,7 @@ print(f"CHANNEL_ID: {CHANNEL_ID if CHANNEL_ID else 'НЕ ЗАДАН'}", flush=Tr
 print("=" * 60, flush=True)
 
 if not BOT_TOKEN or not CHANNEL_ID:
-    print("❌ ОШИБКА: переменные окружения не заданы!", flush=True)
+    print("❌ ОШИБКА: BOT_TOKEN или CHANNEL_ID не заданы!", flush=True)
     exit(1)
 
 print("✅ Все переменные заданы!", flush=True)
@@ -43,19 +35,18 @@ print("✅ Все переменные заданы!", flush=True)
 # =====================================================================
 # НАСТРОЙКИ
 # =====================================================================
-# ✅ РАБОЧЕЕ ЗЕРКАЛО (поменяй, если не работает)
-BASE_URL = "https://1xlite-36553.pro"
+# ✅ Рабочее зеркало Melbet (поменяй, если не работает)
+BASE_URL = "https://melbet-38497.pro"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json, text/plain, */*",
     "Referer": f"{BASE_URL}/ru/live/baccarat/",
-    "Cookie": "platform_type=desktop; SESSION=34219176f69eace1b636911e2de9a15e; lng=ru; cookies_agree_type=3; tzo=3; is12h=0; auid=uaJbk2qIgo2M+6ofAxNqAg==; _ym_isad=2; mdd=1; window_width=150; referral_values=%7B%22type%22%3A%22reflinkid%22%2C%22val%22%3A%22s_50970m_355c_%22%2C%22additional%22%3A%7B%22name_tag%22%3A%22tag%22%7D%7D; fatman_uuid=45f69ff0-ecb1-67d4-3ff2-3a45baafc739; che_g=777dc1b9-efbf-4728-947a-4a2992ef6da5; sh.session.id=684214c4-f09e-42da-9c1a-ea61b9aca91b; _ym_uid=1786989905737338437; _ym_d=1786989905; _ga=GA1.1.547872848.1786989906"
 }
 
 # Список игр Баккара
-LIST_URL = f"{BASE_URL}/service-api/main-live-feed/v3/games1x2?cfView=3&count=40&fcountry=1&gr=415&grMode=4&lng=ru&ref=7&selectedMs=10.146.1643503"
-DETAIL_URL_TEMPLATE = f"{BASE_URL}/service-api/LiveFeed/GetGameZip?id={{game_id}}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=7&topGroups=&country=190&marketType=1&isNewBuilder=true"
+LIST_URL = f"{BASE_URL}/service-api/LiveFeed/Get1x2_VZip?sports=236&champs=2050671&count=40&gr=1521&mode=4&country=192&partner=8&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
+DETAIL_URL_TEMPLATE = f"{BASE_URL}/service-api/LiveFeed/GetGameZip?id={{game_id}}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=8&topGroups=&country=192&marketType=1&isNewBuilder=true"
 
 SUITS = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {1: "A", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K"}
@@ -67,7 +58,7 @@ messages = {}
 # ФУНКЦИИ
 # =====================================================================
 def get_game_number():
-    now = datetime.now(MOSCOW_TZ)
+    now = datetime.now(pytz.timezone('Europe/Moscow'))
     start = now.replace(hour=3, minute=0, second=0, microsecond=0)
     if now < start:
         start = start - timedelta(days=1)
@@ -81,20 +72,18 @@ def get_active_games():
         
         if response.status_code == 200:
             data = response.json()
-            
-            if isinstance(data, list):
-                games = data
-            elif isinstance(data, dict) and "Value" in data:
+            if isinstance(data, dict) and "Value" in data:
                 games = data.get("Value", [])
+            elif isinstance(data, list):
+                games = data
             else:
                 return []
             
             active_games = []
             for game in games:
-                if game.get("sport", {}).get("id") == 146:
-                    game_id = game.get("id")
-                    if game_id and str(game_id) not in PROCESSED_GAMES:
-                        active_games.append(game)
+                game_id = game.get("I")
+                if game_id and str(game_id) not in PROCESSED_GAMES:
+                    active_games.append(game)
             
             return active_games
         else:
@@ -105,8 +94,8 @@ def get_active_games():
     return []
 
 def get_game_data(game_id):
-    url = DETAIL_URL_TEMPLATE.format(game_id=game_id)
     try:
+        url = DETAIL_URL_TEMPLATE.format(game_id=game_id)
         response = requests.get(url, headers=HEADERS, timeout=5)
         if response.status_code == 200:
             return response.json()
@@ -186,7 +175,7 @@ def edit_message(message_id, text):
 # ОСНОВНОЙ ЦИКЛ
 # =====================================================================
 def main():
-    print("🔄 ПАРСЕР БАККАРА (ПРЯМОЙ ПАРСИНГ API) ЗАПУЩЕН", flush=True)
+    print("🔄 ПАРСЕР БАККАРА ЗАПУЩЕН", flush=True)
     print(f"📢 Канал: {CHANNEL_ID}", flush=True)
     print(f"🌐 Зеркало: {BASE_URL}", flush=True)
     print("=" * 60, flush=True)
@@ -201,7 +190,7 @@ def main():
                 continue
             
             for game in active_games:
-                game_id = str(game.get("id"))
+                game_id = str(game.get("I"))
                 
                 if game_id in PROCESSED_GAMES:
                     continue
