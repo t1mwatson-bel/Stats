@@ -1,50 +1,57 @@
 import requests
 import json
-import re
 import time
+import os
+import re
 from datetime import datetime, timedelta
 import pytz
-import sys
 
 # =====================================================================
-# ПРИНУДИТЕЛЬНЫЙ ВЫВОД ЛОГОВ
+# ЧАСОВОЙ ПОЯС (МОСКВА)
 # =====================================================================
-sys.stdout.flush()
-print("=" * 60, flush=True)
-print("🃏 ПАРСЕР 21 ОЧКО - V3 API (МНОГОПОТОЧНЫЙ)", flush=True)
-print("=" * 60, flush=True)
+MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 
 # =====================================================================
 # НАСТРОЙКИ
 # =====================================================================
-BOT_TOKEN = "5482422004:AAEKX1vcjzGbCYFrRL1MqKj4VymTGYwN7-c"
-CHAT_ID = "-1003477065559"
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+CHANNEL_ID = os.getenv('CHANNEL_ID')
 
-MOSCOW_TZ = pytz.timezone('Europe/Moscow')
-
-API = f"https://api.telegram.org/bot{BOT_TOKEN}"
-messages = {}
-game_cache = {}
-processed_games = set()
-game_numbers = {}  # ✅ Храним номера игр по game_id
-
-SUITS_NAMES = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
-RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A"}
+if not BOT_TOKEN or not CHANNEL_ID:
+    print("❌ Ошибка: BOT_TOKEN или CHANNEL_ID не заданы!", flush=True)
+    exit(1)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Referer": "https://1xlite-84484.pro/ru/live/twentyone/1643503-twentyone-game",
-    "Cookie": "platform_type=desktop; SESSION=34219176f69eace1b636911e2de9a15e; lng=ru; cookies_agree_type=3; tzo=3; is12h=0; auid=uaJbk2qIgo2M+6ofAxNqAg==; _ym_isad=2; _ym_visorc=b; mdd=1; _ga_7JGWL9SV66=GS2.1.s1787331227$o3$g1$t1787331236$j51$l0$h1840256937; window_width=150; referral_values=%7B%22type%22%3A%22reflinkid%22%2C%22val%22%3A%22s_50970m_355c_%22%2C%22additional%22%3A%7B%22name_tag%22%3A%22tag%22%7D%7D; fatman_uuid=45f69ff0-ecb1-67d4-3ff2-3a45baafc739; che_g=777dc1b9-efbf-4728-947a-4a2992ef6da5; sh.session.id=684214c4-f09e-42da-9c1a-ea61b9aca91b; _ym_uid=1786989905737338437; _ym_d=1786989905; _ga=GA1.1.547872848.1786989906"
+    "Accept": "application/json",
+    "Referer": "https://melbet-5427.pro/",
 }
 
-print("✅ Настройки загружены", flush=True)
+# Список игр Баккара
+LIST_URL = "https://melbet-5427.pro/service-api/LiveFeed/Get1x2_VZip?sports=236&champs=2050671&count=40&gr=1521&mode=4&country=192&partner=8&getEmpty=true&virtualSports=true&noFilterBlockEvent=true"
+DETAIL_URL_TEMPLATE = "https://melbet-5427.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=8&topGroups=&country=192&marketType=1&isNewBuilder=true"
+
+SUITS = {
+    0: "♠️",
+    1: "♣️",
+    2: "♦️",
+    3: "♥️"
+}
+
+RANKS = {
+    1: "A", 2: "2", 3: "3", 4: "4", 5: "5",
+    6: "6", 7: "7", 8: "8", 9: "9", 10: "10",
+    11: "J", 12: "Q", 13: "K"
+}
+
+processed_games = set()
+messages = {}
 
 # =====================================================================
 # ФУНКЦИИ
 # =====================================================================
-def get_game_number_fallback():
-    """Номер игры от 1 до 1440 (каждую минуту, старт в 03:00) - используется только если из API не пришёл"""
+def get_game_number():
+    """Номер игры от 1 до 1440 (каждую минуту, старт в 03:00)"""
     now = datetime.now(MOSCOW_TZ)
     start = now.replace(hour=3, minute=0, second=0, microsecond=0)
     if now < start:
@@ -54,44 +61,31 @@ def get_game_number_fallback():
     return game_number
 
 def get_active_games():
-    """Получает список всех активных игр через V3 API"""
+    """Получает список активных игр Баккара"""
     try:
-        url = "https://1xlite-84484.pro/service-api/main-live-feed/v3/games1x2?cfView=3&count=40&fcountry=1&gr=415&grMode=4&lng=ru&ref=7&selectedMs=10.146.1643503"
-        print(f"🔍 Запрос к API V3...", flush=True)
-        response = requests.get(url, headers=HEADERS, timeout=10)
-        
+        response = requests.get(LIST_URL, headers=HEADERS, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            
-            if isinstance(data, list):
-                games = data
-            elif isinstance(data, dict) and "Value" in data:
-                games = data.get("Value", [])
-            else:
-                print(f"⚠️ Неизвестный формат ответа", flush=True)
-                return []
-            
-            print(f"📊 Найдено игр в ответе: {len(games)}", flush=True)
+            games = data.get("Value", [])
             
             active_games = []
             for game in games:
-                if game.get("sport", {}).get("id") == 146:
-                    game_id = game.get("id")
-                    if game_id and str(game_id) not in processed_games:
-                        active_games.append(game)
+                game_id = game.get("I")
+                if game_id and str(game_id) not in processed_games:
+                    active_games.append(game)
             
-            print(f"📊 Активных игр (не обработанных): {len(active_games)}", flush=True)
+            print(f"📊 Найдено активных игр: {len(active_games)}", flush=True)
             return active_games
         else:
             print(f"⚠️ Статус API: {response.status_code}", flush=True)
     except Exception as e:
         print(f"❌ Ошибка: {e}", flush=True)
-    
     return []
 
 def get_game_data(game_id):
-    url = f"https://1xlite-84484.pro/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=7&topGroups=&country=190&marketType=1&isNewBuilder=true"
+    """Получает данные конкретной игры"""
     try:
+        url = DETAIL_URL_TEMPLATE.format(game_id=game_id)
         response = requests.get(url, headers=HEADERS, timeout=5)
         if response.status_code == 200:
             return response.json()
@@ -102,102 +96,71 @@ def get_game_data(game_id):
     return None
 
 def format_cards(cards):
-    """Форматирует карты с цветными эмодзи"""
+    """Форматирует карты для вывода"""
     if not cards:
         return ""
     result = []
-    suit_emoji = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
-    for c in cards:
-        suit = suit_emoji.get(c.get("CS", 0), "?")
-        rank = RANKS.get(c.get("CV", 0), str(c.get("CV", "?")))
+    for card in cards:
+        suit = SUITS.get(card.get("S", 0), "?")
+        rank = RANKS.get(card.get("R", 0), "?")
         result.append(f"{rank}{suit}")
     return "".join(result)
 
 def calculate_score(cards):
-    """Подсчет очков - туз всегда 11"""
+    """Считает очки в баккара (последняя цифра суммы)"""
     if not cards:
         return 0
     
     score = 0
+    for card in cards:
+        rank = card.get("R", 0)
+        if rank == 1:  # Туз = 1
+            score += 1
+        elif 2 <= rank <= 9:
+            score += rank
+        else:  # 10, J, Q, K = 0
+            score += 0
     
-    for c in cards:
-        cv = c.get("CV", 0)
-        if cv == 14:      # Туз = 11
-            score += 11
-        elif cv == 13:    # Король = 4
-            score += 4
-        elif cv == 12:    # Дама = 3
-            score += 3
-        elif cv == 11:    # Валет = 2
-            score += 2
-        elif 6 <= cv <= 10:  # 6,7,8,9,10
-            score += cv
-    
-    return score
+    return score % 10  # Берём последнюю цифру
 
-def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
+def is_game_finished(state):
     """Проверяет, завершена ли игра"""
-    if state in ["4", "5"]:
-        return True
-    
-    if p_score == 21 or d_score == 21:
-        return True
-    
-    if p_score > 21 or d_score > 21:
-        return True
-    
-    if p_score < 17:
-        return False
-    
-    if dealer_cards and len(dealer_cards) >= 2 and d_score >= 17:
-        return True
-    
-    return False
+    return state == "Игра завершена"
 
-def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state):
+def build_message(game_num, player_cards, banker_cards, p_score, b_score):
+    """Формирует сообщение для отправки"""
     p_hand = format_cards(player_cards)
-    d_hand = format_cards(dealer_cards)
-    total = p_score + d_score if dealer_cards else p_score
+    b_hand = format_cards(banker_cards)
     
-    if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-        if p_score > 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
-        if d_score > 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
-        if p_score == 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
-        if d_score == 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
-        if p_score > d_score:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
-        if d_score > p_score:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
-        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
-    
-    if not dealer_cards:
-        arrow = "◀️"
-    elif p_score < 19:
-        arrow = "◀️"
+    # Определяем результат
+    if p_score > b_score:
+        result = "✅"
+    elif b_score > p_score:
+        result = "❌"
     else:
-        arrow = "▶️"
+        result = "🔰"
     
-    return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
+    return f"#N{game_num}. {p_score}({p_hand}) - {result}{b_score}({b_hand}) #T{p_score + b_score}"
 
 def send_message(text):
+    """Отправляет сообщение в Telegram"""
     try:
-        r = requests.post(API + "/sendMessage", json={"chat_id": CHAT_ID, "text": text})
-        if r.status_code == 200:
-            return r.json()["result"]["message_id"]
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": CHANNEL_ID, "text": text}
+        response = requests.post(url, json=payload, timeout=5)
+        if response.status_code == 200:
+            return response.json()["result"]["message_id"]
     except Exception as e:
         print(f"❌ Ошибка отправки: {e}", flush=True)
     return None
 
 def edit_message(message_id, text):
+    """Редактирует сообщение в Telegram"""
     try:
-        url = f"{API}/editMessageText"
-        payload = {"chat_id": CHAT_ID, "message_id": message_id, "text": text}
-        r = requests.post(url, json=payload)
-        return r.status_code == 200
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText"
+        payload = {"chat_id": CHANNEL_ID, "message_id": message_id, "text": text}
+        response = requests.post(url, json=payload, timeout=5)
+        return response.status_code == 200
     except Exception as e:
         print(f"❌ Ошибка редактирования: {e}", flush=True)
         return False
@@ -206,10 +169,8 @@ def edit_message(message_id, text):
 # ОСНОВНОЙ ЦИКЛ
 # =====================================================================
 def main():
-    global processed_games, game_numbers
-    
-    print("🔄 ПАРСЕР ЗАПУЩЕН (МНОГОПОТОЧНЫЙ)", flush=True)
-    print(f"🕐 Игры каждую минуту, старт в 03:00", flush=True)
+    print("🔄 ПАРСЕР БАККАРА ЗАПУЩЕН", flush=True)
+    print(f"📢 Канал: {CHANNEL_ID}", flush=True)
     print("=" * 60, flush=True)
     
     while True:
@@ -222,7 +183,7 @@ def main():
                 continue
             
             for game in active_games:
-                game_id = str(game.get("id"))
+                game_id = str(game.get("I"))
                 
                 if game_id in processed_games:
                     continue
@@ -231,52 +192,30 @@ def main():
                 if not data:
                     continue
                 
+                # Парсим карты игрока и банка
                 sc = data.get("Value", {}).get("SC", {})
+                fs = sc.get("FS", {})
                 
                 player_cards = []
-                dealer_cards = []
-                state = None
-                game_number_from_api = None
+                banker_cards = []
+                state = sc.get("CPS", "")
                 
+                # Ищем карты игрока (P) и банка (B)
                 for item in sc.get("S", []):
-                    if item.get("Key") == "P1":
-                        try:
-                            player_cards = json.loads(item.get("Value", "[]"))
-                        except:
-                            player_cards = []
-                    if item.get("Key") == "P2":
-                        try:
-                            dealer_cards = json.loads(item.get("Value", "[]"))
-                        except:
-                            dealer_cards = []
-                    if item.get("Key") == "STATE":
-                        state = item.get("Value")
-                    if item.get("Key") in ["GN", "MI", "ID", "NUM"]:
-                        game_number_from_api = item.get("Value")
+                    if item.get("Key") == "P":
+                        player_cards = json.loads(item.get("Value", "[]"))
+                    if item.get("Key") == "B":
+                        banker_cards = json.loads(item.get("Value", "[]"))
                 
-                if not player_cards:
+                if not player_cards and not banker_cards:
                     continue
                 
-                # ✅ Если номер уже есть для этого game_id — используем его
-                if game_id in game_numbers:
-                    game_number = game_numbers[game_id]
-                    print(f"📌 Используем сохранённый номер для {game_id}: {game_number}", flush=True)
-                else:
-                    # Первый раз — сохраняем номер
-                    if game_number_from_api:
-                        try:
-                            game_number = int(game_number_from_api)
-                        except:
-                            game_number = get_game_number_fallback()
-                    else:
-                        game_number = get_game_number_fallback()
-                    game_numbers[game_id] = game_number
-                    print(f"📌 Сохранён новый номер для {game_id}: {game_number}", flush=True)
+                game_number = get_game_number()
                 
-                p_score = calculate_score(player_cards)
-                d_score = calculate_score(dealer_cards) if dealer_cards else 0
+                p_score = calculate_score(player_cards) if player_cards else 0
+                b_score = calculate_score(banker_cards) if banker_cards else 0
                 
-                msg = build_message(game_number, player_cards, dealer_cards, p_score, d_score, state)
+                msg = build_message(game_number, player_cards, banker_cards, p_score, b_score)
                 
                 if game_id in messages:
                     edit_message(messages[game_id], msg)
@@ -287,7 +226,7 @@ def main():
                         messages[game_id] = msg_id
                         print(f"📤 Новая игра {game_id}: {msg}", flush=True)
                 
-                if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
+                if is_game_finished(state):
                     processed_games.add(game_id)
                     print(f"🏁 Игра {game_id} завершена", flush=True)
                 
@@ -297,10 +236,6 @@ def main():
             if len(processed_games) > 200:
                 processed_games.clear()
                 print("🗑️ Кэш обработанных игр очищен", flush=True)
-            
-            if len(game_numbers) > 200:
-                game_numbers.clear()
-                print("🗑️ Кэш номеров игр очищен", flush=True)
             
             time.sleep(2)
             
