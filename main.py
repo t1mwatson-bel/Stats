@@ -172,7 +172,7 @@ def send_startup_message():
     send_message(msg)
 
 # =====================================================================
-# ПАРСИНГ - с добавлением очков
+# ПАРСИНГ
 # =====================================================================
 def parse_game(text):
     """Парсит игру и возвращает карты и очки игрока и дилера"""
@@ -321,7 +321,7 @@ def get_suit_by_position(position):
     return POSITION_SUITS.get(position, None)
 
 def is_valid_game(game_data):
-    """Проверяет, подходит ли игра для прогноза: дилер обязателен, нет 21 очка"""
+    """Проверяет, подходит ли игра для ПРОГНОЗА: дилер обязателен, нет 21 очка"""
     player_cards = game_data.get("player_cards", [])
     dealer_cards = game_data.get("dealer_cards", [])
     player_score = game_data.get("player_score", 0)
@@ -425,8 +425,11 @@ def predict(game_data):
         "games": [target_game, target_game + 1, target_game + 2, target_game + 3]
     }
 
+# =====================================================================
+# ПРОВЕРКА РЕЗУЛЬТАТОВ - ИСПРАВЛЕНА (БЕЗ is_valid_game)
+# =====================================================================
 def check_results(history, all_messages):
-    """Проверяет результат - ТОЛЬКО у игрока, ЛЮБЫЕ карты"""
+    """Проверяет результат - ТОЛЬКО у игрока, ЛЮБЫЕ карты, БЕЗ фильтров"""
     for entry in history:
         if entry.get("status") != "pending":
             continue
@@ -454,11 +457,13 @@ def check_results(history, all_messages):
                 print(f"⏳ Ждем игру #N{game_to_check} для проверки масти {predicted_suit}", flush=True)
                 break
             
+            # ПАРСИМ ИГРУ - БЕЗ ПРОВЕРКИ is_valid_game()!
             game_data = parse_game(game_msg)
             if not game_data:
                 print(f"⚠️ Не удалось распарсить #N{game_to_check}", flush=True)
                 continue
             
+            # ПРОВЕРЯЕМ ТОЛЬКО У ИГРОКА, ЛЮБОЕ КОЛИЧЕСТВО КАРТ
             suit_found = False
             player_cards = game_data.get("player_cards", [])
             
