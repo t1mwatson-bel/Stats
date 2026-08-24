@@ -21,8 +21,8 @@ print("🃏 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10)", flush=True)
 print("=" * 60, flush=True)
 
 print("🔮 ОБНОВЛЕНИЕ УСПЕШНО УСТАНОВЛЕНО!")
-print("📦 Версия: 09v1.0")
-print("✅ Статус: ДИАГНОСТИКА ПАРСИНГА")
+print("📦 Версия: 10v1.0")
+print("✅ Статус: ИСПРАВЛЕН ПАРСИНГ")
 print("📌 Проверка каждой игры в реальном времени")
 print("📌 Целевая игра = 0, догоны = 1,2,3")
 print("=" * 60, flush=True)
@@ -171,135 +171,52 @@ def edit_message(message_id, text):
         return False
 
 # =====================================================================
-# ДИАГНОСТИКА ПАРСИНГА
-# =====================================================================
-def debug_parse_game(text):
-    """Детальная диагностика парсинга"""
-    print("=" * 60, flush=True)
-    print("🔍 ДИАГНОСТИКА ПАРСИНГА", flush=True)
-    print(f"📝 ТЕКСТ: {text}", flush=True)
-    print(f"📏 Длина: {len(text)} символов", flush=True)
-    
-    # Проверяем наличие #N
-    game_match = re.search(r'#N(\d+)', text)
-    if game_match:
-        print(f"✅ Найден номер игры: #N{game_match.group(1)}", flush=True)
-    else:
-        print("❌ НЕ НАЙДЕН #N", flush=True)
-        print("=" * 60, flush=True)
-        return None
-    
-    # Проверяем наличие разделителя
-    if '-' in text:
-        print("✅ Найден разделитель '-'", flush=True)
-        parts = text.split('-')
-        print(f"   Частей: {len(parts)}", flush=True)
-        if len(parts) >= 2:
-            print(f"   Часть 1: {parts[0][:50]}...", flush=True)
-            print(f"   Часть 2: {parts[1][:50]}...", flush=True)
-    elif '—' in text:
-        print("✅ Найден разделитель '—'", flush=True)
-        parts = text.split('—')
-        print(f"   Частей: {len(parts)}", flush=True)
-    else:
-        print("❌ НЕ НАЙДЕН разделитель '-' или '—'", flush=True)
-        print("=" * 60, flush=True)
-        return None
-    
-    # Проверяем паттерн карт
-    card_pattern = r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)'
-    matches = re.findall(card_pattern, text)
-    if matches:
-        print(f"✅ Найдено карт: {len(matches)}", flush=True)
-        for i, (rank, suit) in enumerate(matches, 1):
-            print(f"   Карта {i}: {rank}{suit}", flush=True)
-    else:
-        print("❌ КАРТЫ НЕ НАЙДЕНЫ!", flush=True)
-        print(f"   Ищем паттерн: {card_pattern}", flush=True)
-        
-        # Показываем все символы в тексте
-        print("   Уникальные символы в тексте:", flush=True)
-        for char in sorted(set(text)):
-            if char.isprintable():
-                print(f"     '{char}' (код: {ord(char)})", flush=True)
-            else:
-                print(f"     (код: {ord(char)})", flush=True)
-        
-        print("=" * 60, flush=True)
-        return None
-    
-    # Проверяем § !§
-    if '§' in text and '!§' in text:
-        print("✅ Найдены маркеры § и !§", flush=True)
-        # Находим все вхождения
-        all_matches = re.findall(r'§([^)]+)!§', text)
-        if all_matches:
-            print(f"   Найдено блоков: {len(all_matches)}", flush=True)
-            for i, block in enumerate(all_matches, 1):
-                print(f"   Блок {i}: {block[:30]}...", flush=True)
-    else:
-        print("❌ НЕ НАЙДЕНЫ маркеры § и !§", flush=True)
-        print("=" * 60, flush=True)
-        return None
-    
-    print("=" * 60, flush=True)
-    return True
-
-# =====================================================================
-# ОСНОВНЫЕ ФУНКЦИИ
+# ОСНОВНЫЕ ФУНКЦИИ - ИСПРАВЛЕН ПАРСИНГ
 # =====================================================================
 def parse_game(text):
-    """Парсит игру и возвращает карты игрока и дилера"""
+    """Парсит игру в формате: #N297. 17(7♠️6♣️K♣️) ▶️ 13(J♣️A♣️) #T30"""
     try:
         print(f"🔍 Парсинг: {text[:100]}...", flush=True)
         
+        # Находим номер игры
         game_match = re.search(r'#N(\d+)', text)
         if not game_match:
             print(f"❌ Нет #N в тексте", flush=True)
             return None
         game_number = int(game_match.group(1))
         
-        # Очищаем текст от эмодзи
-        clean_text = text
-        for symbol in ['✅', '🔰', '▶️', '◀️', '⚠️', '❌', '⭕', '🔄', '♦️', '♥️', '♣️', '♠️']:
-            clean_text = clean_text.replace(symbol, '')
-        
-        # Ищем разделитель
-        if '-' in clean_text:
-            parts = clean_text.split('-')
-        elif '—' in clean_text:
-            parts = clean_text.split('—')
-        else:
-            print(f"❌ Нет разделителя", flush=True)
+        # Ищем разделитель между игроком и дилером
+        # Может быть ▶️, ➡️, ->, или просто - 
+        separator_match = re.search(r'[▶️➡️]|\s+[-–—]\s+', text)
+        if not separator_match:
+            print(f"❌ Нет разделителя в тексте", flush=True)
             return None
         
+        # Разделяем на части
+        parts = re.split(r'[▶️➡️]|\s+[-–—]\s+', text)
         if len(parts) < 2:
-            print(f"❌ Мало частей: {len(parts)}", flush=True)
+            print(f"❌ Не удалось разделить текст: {len(parts)} частей", flush=True)
             return None
         
         player_part = parts[0].strip()
         dealer_part = parts[1].strip()
         
-        # Ищем карты игрока
-        player_match = re.search(r'(\d+)§([^)]+)!§', player_part)
-        if not player_match:
-            # Пробуем альтернативный паттерн
-            player_match = re.search(r'(\d+)§(.+?)!§', player_part)
-            if not player_match:
-                print(f"❌ Не найден игрок в: {player_part[:50]}", flush=True)
-                return None
+        # Извлекаем карты игрока из скобок
+        player_cards_match = re.search(r'\(([^)]+)\)', player_part)
+        if not player_cards_match:
+            print(f"❌ Не найдены карты игрока в скобках", flush=True)
+            return None
         
-        player_cards_str = player_match.group(2).strip()
+        player_cards_str = player_cards_match.group(1).strip()
         
-        # Ищем карты дилера
-        dealer_match = re.search(r'(\d+)§([^)]+)!§', dealer_part)
-        dealer_cards_str = dealer_match.group(2).strip() if dealer_match else ""
+        # Извлекаем карты дилера из скобок
+        dealer_cards_match = re.search(r'\(([^)]+)\)', dealer_part)
+        dealer_cards_str = dealer_cards_match.group(1).strip() if dealer_cards_match else ""
         
         # Парсим карты игрока
         player_cards = []
         for card in re.findall(r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)', player_cards_str):
             rank, suit = card
-            # Нормализуем масть
             suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
             player_cards.append({"rank": rank, "suit": suit})
         
@@ -315,6 +232,8 @@ def parse_game(text):
         
         if player_cards:
             print(f"   Карты игрока: {', '.join([c['rank']+c['suit'] for c in player_cards])}", flush=True)
+        if dealer_cards:
+            print(f"   Карты дилера: {', '.join([c['rank']+c['suit'] for c in dealer_cards])}", flush=True)
         
         return {
             "number": game_number,
@@ -612,7 +531,7 @@ def main():
     global LAST_PREDICT_TIME
     
     print("🔄 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10) ЗАПУЩЕН", flush=True)
-    print("✅ РЕЖИМ: ДИАГНОСТИКА ПАРСИНГА", flush=True)
+    print("✅ РЕЖИМ: ИСПРАВЛЕН ПАРСИНГ", flush=True)
     print(f"📊 Читает канал: {CHANNEL_STATS}", flush=True)
     print(f"📤 Отправляет в: {CHANNEL_PROGNOZ}", flush=True)
     print("=" * 60, flush=True)
@@ -627,7 +546,6 @@ def main():
     all_messages = load_recent_messages()
     print(f"📥 Загружено сообщений: {len(all_messages)}", flush=True)
     
-    # Показываем первые 3 сообщения для диагностики
     if all_messages:
         print("📝 Примеры сообщений из канала:", flush=True)
         for i, msg in enumerate(all_messages[:3], 1):
@@ -691,10 +609,7 @@ def main():
                     all_messages = all_messages[-500:]
                 
                 print(f"📥 Получена игра #N{game_number}", flush=True)
-                print(f"📝 Текст: {text[:200]}...", flush=True)
-                
-                # Запускаем диагностику парсинга
-                debug_parse_game(text)
+                print(f"📝 Текст: {text}", flush=True)
                 
                 check_results(history, all_messages)
                 
