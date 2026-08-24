@@ -21,9 +21,9 @@ print("🃏 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10)", flush=True)
 print("=" * 60, flush=True)
 
 print("🔮 ОБНОВЛЕНИЕ УСПЕШНО УСТАНОВЛЕНО!")
-print("📦 Версия: 06v1.0")
+print("📦 Версия: 06v1.1")
 print("✅ Статус: Завершено")
-print("📌 Исправлено: проверка каждой игры отдельно (мгновенный результат)")
+print("📌 Исправлено: проверка ТОЛЬКО игрока (дилер убран)")
 print("=" * 60, flush=True)
 
 # =====================================================================
@@ -78,8 +78,8 @@ def load_stats():
             with open(STATS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except:
-            return {"total": 0, "win": 0, "lose": 0, "by_dogon": {1: 0, 2: 0, 3: 0, 4: 0}}
-    return {"total": 0, "win": 0, "lose": 0, "by_dogon": {1: 0, 2: 0, 3: 0, 4: 0}}
+            return {"total": 0, "win": 0, "lose": 0, "by_dogon": {0:0, 1: 0, 2: 0, 3: 0, 4: 0}}
+    return {"total": 0, "win": 0, "lose": 0, "by_dogon": {0:0, 1: 0, 2: 0, 3: 0, 4: 0}}
 
 def save_stats(stats):
     with open(STATS_FILE, "w", encoding="utf-8") as f:
@@ -170,6 +170,7 @@ def edit_message(message_id, text):
         return False
 
 def parse_game(text):
+    """Парсит игру и возвращает карты игрока и дилера"""
     try:
         game_match = re.search(r'#N(\d+)', text)
         if not game_match:
@@ -185,12 +186,15 @@ def parse_game(text):
             return None
         
         player_part = parts[0].strip()
-        dealer_part = parts[1].strip() if len(parts) > 1 else ""
+        dealer_part = parts[1].strip()
         
         player_match = re.search(r'(\d+)\(([^)]+)\)', player_part)
         if not player_match:
             return None
         player_cards_str = player_match.group(2).strip()
+        
+        dealer_match = re.search(r'(\d+)\(([^)]+)\)', dealer_part)
+        dealer_cards_str = dealer_match.group(2).strip() if dealer_match else ""
         
         player_cards = []
         for card in re.findall(r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)', player_cards_str):
@@ -198,16 +202,11 @@ def parse_game(text):
             suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
             player_cards.append({"rank": rank, "suit": suit})
         
-        # ✅ Парсим дилера, даже если там 0()
         dealer_cards = []
-        if dealer_part and dealer_part != "0()":
-            dealer_match = re.search(r'(\d+)\(([^)]+)\)', dealer_part)
-            if dealer_match:
-                dealer_cards_str = dealer_match.group(2).strip()
-                for card in re.findall(r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)', dealer_cards_str):
-                    rank, suit = card
-                    suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
-                    dealer_cards.append({"rank": rank, "suit": suit})
+        for card in re.findall(r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)', dealer_cards_str):
+            rank, suit = card
+            suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
+            dealer_cards.append({"rank": rank, "suit": suit})
         
         return {
             "number": game_number,
@@ -343,7 +342,7 @@ def predict(game_data):
     }
 
 def check_results(history, all_messages):
-    """Проверяет результаты прогнозов — каждая игра отдельно, мгновенный результат"""
+    """Проверяет результаты прогнозов — ТОЛЬКО ИГРОК"""
     for entry in history:
         if entry.get("status") != "pending":
             continue
@@ -361,46 +360,33 @@ def check_results(history, all_messages):
         found_dogon = None
         checked_games = 0
         
-        # Проверяем 4 игры по очереди
         for i in range(4):
             game_to_check = target + i
             game_msg = None
             
-            # Ищем игру в all_messages
             for msg in all_messages:
                 if f"#N{game_to_check}" in msg:
                     game_msg = msg
                     break
             
             if not game_msg:
-                # Игра ещё не пришла — выходим, ждём дальше
                 break
             
             checked_games += 1
             game_data = parse_game(game_msg)
             
             if game_data:
-                # Проверяем игрока
+                # ✅ Проверяем ТОЛЬКО игрока
                 for card in game_data["player_cards"]:
                     if card.get("suit") == predicted_suit:
                         found = True
                         found_game = game_to_check
                         found_dogon = i + 1
                         break
-                
-                # Если не нашли у игрока — проверяем дилера
-                if not found:
-                    for card in game_data["dealer_cards"]:
-                        if card.get("suit") == predicted_suit:
-                            found = True
-                            found_game = game_to_check
-                            found_dogon = i + 1
-                            break
             
             if found:
                 break
         
-        # Если нашли — ЗАШЛО (СРАЗУ!)
         if found:
             update_stats(found_dogon, "win")
             
@@ -420,9 +406,7 @@ def check_results(history, all_messages):
             entry["status"] = "win"
             continue
         
-        # Если не нашли — проверяем, пришли ли все 4 игры
         if checked_games == 4:
-            # Все 4 игры проверены, масти нет — НЕ ЗАШЛО
             update_stats(0, "lose")
             
             original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
@@ -504,7 +488,7 @@ def main():
     print("   - Если несколько старших - пропускаем", flush=True)
     print("   - По позиции определяем масть (1→♣️, 2→♦️, 3→♥️, 4→♠️)", flush=True)
     print("   - Прогноз на 4 игры (целевая + 3 догона)", flush=True)
-    print("   - Проверка: ИГРОК + ДИЛЕР (мгновенный результат)", flush=True)
+    print("   - Проверка: ТОЛЬКО ИГРОК", flush=True)
     print("=" * 60, flush=True)
     
     offset = get_offset()
@@ -576,7 +560,6 @@ def main():
                 if len(all_messages) > 500:
                     all_messages = all_messages[-500:]
                 
-                 # ✅ ВЫЗЫВАЙ check_results СРАЗУ ПОСЛЕ ДОБАВЛЕНИЯ
                 check_results(history, all_messages)
                 
                 if game_number in PROCESSED_GAMES:
