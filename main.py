@@ -162,7 +162,6 @@ def edit_message(message_id, text):
         return False
 
 def send_startup_message():
-    """Отправляет приветственное сообщение в канал при запуске"""
     msg = (
         "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО\n"
         "📦 Версия: 2.1.0\n"
@@ -175,14 +174,12 @@ def send_startup_message():
 # ПАРСИНГ
 # =====================================================================
 def parse_game(text):
-    """Парсит игру и возвращает карты и очки игрока и дилера"""
     try:
         game_match = re.search(r'#N(\d+)', text)
         if not game_match:
             return None
         game_number = int(game_match.group(1))
         
-        # Ищем разделитель
         parts = None
         if '◀️' in text:
             parts = text.split('◀️')
@@ -201,25 +198,20 @@ def parse_game(text):
         player_part = parts[0].strip()
         dealer_part = parts[1].strip()
         
-        # Извлекаем очки игрока (число перед скобками)
         player_score_match = re.search(r'(\d+)\s*\(', player_part)
         player_score = int(player_score_match.group(1)) if player_score_match else 0
         
-        # Извлекаем очки дилера
         dealer_score_match = re.search(r'(\d+)\s*\(', dealer_part)
         dealer_score = int(dealer_score_match.group(1)) if dealer_score_match else 0
         
-        # Извлекаем карты игрока из скобок
         player_cards_match = re.search(r'\(([^)]+)\)', player_part)
         if not player_cards_match:
             return None
         player_cards_str = player_cards_match.group(1).strip()
         
-        # Извлекаем карты дилера из скобок
         dealer_cards_match = re.search(r'\(([^)]+)\)', dealer_part)
         dealer_cards_str = dealer_cards_match.group(1).strip() if dealer_cards_match else ""
         
-        # ФУНКЦИЯ ДЛЯ ПАРСИНГА КАРТ
         def parse_cards(cards_str):
             cards = []
             i = 0
@@ -321,7 +313,6 @@ def get_suit_by_position(position):
     return POSITION_SUITS.get(position, None)
 
 def is_valid_game(game_data):
-    """Проверяет, подходит ли игра для ПРОГНОЗА: дилер обязателен, нет 21 очка"""
     player_cards = game_data.get("player_cards", [])
     dealer_cards = game_data.get("dealer_cards", [])
     player_score = game_data.get("player_score", 0)
@@ -329,9 +320,8 @@ def is_valid_game(game_data):
     
     print(f"   Проверка для прогноза: игрок={len(player_cards)} карт, дилер={len(dealer_cards)} карт, очки: {player_score}/{dealer_score}", flush=True)
     
-    # Проверяем 21 очко
     if player_score == 21 or dealer_score == 21:
-        print(f"⏭️ Пропускаем #N{game_data['number']}: у кого-то 21 очко (игрок {player_score}, дилер {dealer_score})", flush=True)
+        print(f"⏭️ Пропускаем #N{game_data['number']}: у кого-то 21 очко", flush=True)
         return False
     
     if len(player_cards) not in [3, 4]:
@@ -339,7 +329,7 @@ def is_valid_game(game_data):
         return False
     
     if len(dealer_cards) == 0:
-        print(f"⏭️ Пропускаем #N{game_data['number']}: у дилера 0 карт (нужна хотя бы 1)", flush=True)
+        print(f"⏭️ Пропускаем #N{game_data['number']}: у дилера 0 карт", flush=True)
         return False
     
     if len(player_cards) == 3:
@@ -426,10 +416,10 @@ def predict(game_data):
     }
 
 # =====================================================================
-# ПРОВЕРКА РЕЗУЛЬТАТОВ - ИСПРАВЛЕНА (БЕЗ is_valid_game)
+# ПРОВЕРКА РЕЗУЛЬТАТОВ - ТОЛЬКО ЗАВЕРШЕННЫЕ ИГРЫ (✅ или 🔰)
 # =====================================================================
 def check_results(history, all_messages):
-    """Проверяет результат - ТОЛЬКО у игрока, ЛЮБЫЕ карты, БЕЗ фильтров"""
+    """Проверяет результат только по завершенным играм (есть ✅ или 🔰)"""
     for entry in history:
         if entry.get("status") != "pending":
             continue
@@ -447,23 +437,23 @@ def check_results(history, all_messages):
         for i in range(max_games_to_check):
             game_to_check = target + i
             
+            # Ищем ТОЛЬКО завершенные игры (с ✅ или 🔰)
             game_msg = None
             for msg in all_messages:
-                if f"#N{game_to_check}" in msg:
+                if f"#N{game_to_check}" in msg and ('✅' in msg or '🔰' in msg):
                     game_msg = msg
                     break
             
             if not game_msg:
-                print(f"⏳ Ждем игру #N{game_to_check} для проверки масти {predicted_suit}", flush=True)
+                print(f"⏳ Ждем завершенную игру #N{game_to_check} для проверки масти {predicted_suit}", flush=True)
                 break
             
-            # ПАРСИМ ИГРУ - БЕЗ ПРОВЕРКИ is_valid_game()!
             game_data = parse_game(game_msg)
             if not game_data:
                 print(f"⚠️ Не удалось распарсить #N{game_to_check}", flush=True)
                 continue
             
-            # ПРОВЕРЯЕМ ТОЛЬКО У ИГРОКА, ЛЮБОЕ КОЛИЧЕСТВО КАРТ
+            # Проверяем масть у игрока
             suit_found = False
             player_cards = game_data.get("player_cards", [])
             
@@ -682,6 +672,7 @@ def main():
                     continue
                 game_number = int(game_id_match.group(1))
                 
+                # Просто добавляем сообщение
                 all_messages.append(text)
                 if len(all_messages) > 500:
                     all_messages = all_messages[-500:]
@@ -689,14 +680,15 @@ def main():
                 print(f"📥 Получена игра #N{game_number}", flush=True)
                 print(f"📝 Текст: {text}", flush=True)
                 
-                if '✅' not in text and '🔰' not in text:
-                    print(f"⏭️ #N{game_number} пропущена: нет ✅ или 🔰 (игра не завершена)", flush=True)
-                    continue
+                # Проверяем результат ТОЛЬКО если есть ✅ или 🔰
+                if '✅' in text or '🔰' in text:
+                    print(f"✅ #N{game_number} завершена - проверяем результаты", flush=True)
+                    check_results(history, all_messages)
                 else:
-                    print(f"✅ #N{game_number} имеет ✅ или 🔰 - игра завершена", flush=True)
+                    print(f"⏭️ #N{game_number} не завершена (нет ✅ или 🔰)", flush=True)
+                    continue
                 
-                check_results(history, all_messages)
-                
+                # Создаем прогноз только если игра завершена и подходит
                 if game_number in PROCESSED_GAMES:
                     print(f"⏭️ #N{game_number} уже обработана", flush=True)
                     continue
