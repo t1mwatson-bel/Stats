@@ -18,32 +18,6 @@ MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 sys.stdout.flush()
 
 # =====================================================================
-# ПРИВЕТСТВИЕ
-# =====================================================================
-print("╔═══════════════════════════════════════════════════════════════╗", flush=True)
-print("║                                                               ║", flush=True)
-print("║              🃏  ПРОГНОЗИСТ ПО ЦИФРАМ  🃏                    ║", flush=True)
-print("║                     Версия 2.1.0                             ║", flush=True)
-print("║                                                               ║", flush=True)
-print("╠═══════════════════════════════════════════════════════════════╣", flush=True)
-print("║                                                               ║", flush=True)
-print("║  ✅  ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!                          ║", flush=True)
-print("║  📦  Версия: 2.1.0                                          ║", flush=True)
-print("║  🚀  Статус: АКТИВЕН                                       ║", flush=True)
-print("║                                                               ║", flush=True)
-print("║  📌  НОВОВВЕДЕНИЯ:                                           ║", flush=True)
-print("║  •  Мгновенная проверка каждой игры                          ║", flush=True)
-print("║  •  Фильтр: пропуск при совпадении масти с картой            ║", flush=True)
-print("║  •  Только завершенные игры (✅ или 🔰)                      ║", flush=True)
-print("║  •  Проверка только у игрока                                 ║", flush=True)
-print("║  •  Дилер обязателен для прогноза                            ║", flush=True)
-print("║                                                               ║", flush=True)
-print("║  🎯  Целевая игра = 0, догоны = 1, 2, 3                     ║", flush=True)
-print("║                                                               ║", flush=True)
-print("╚═══════════════════════════════════════════════════════════════╝", flush=True)
-print("", flush=True)
-
-# =====================================================================
 # ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
 # =====================================================================
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -190,38 +164,18 @@ def edit_message(message_id, text):
 def send_startup_message():
     """Отправляет приветственное сообщение в канал при запуске"""
     msg = (
-        "╔═══════════════════════════════════════════════════════════════╗\n"
-        "║                                                               ║\n"
-        "║              🃏  ПРОГНОЗИСТ ПО ЦИФРАМ  🃏                    ║\n"
-        "║                     Версия 2.1.0                             ║\n"
-        "║                                                               ║\n"
-        "╠═══════════════════════════════════════════════════════════════╣\n"
-        "║                                                               ║\n"
-        "║  ✅  ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!                          ║\n"
-        "║  📦  Версия: 2.1.0                                          ║\n"
-        "║  🚀  Статус: АКТИВЕН                                       ║\n"
-        "║                                                               ║\n"
-        "║  📌  НОВОВВЕДЕНИЯ:                                           ║\n"
-        "║  •  Мгновенная проверка каждой игры                          ║\n"
-        "║  •  Фильтр: пропуск при совпадении масти с картой            ║\n"
-        "║  •  Только завершенные игры (✅ или 🔰)                      ║\n"
-        "║  •  Проверка только у игрока                                 ║\n"
-        "║  •  Дилер обязателен для прогноза                            ║\n"
-        "║                                                               ║\n"
-        "║  🎯  Целевая игра = 0, догоны = 1, 2, 3                     ║\n"
-        "║                                                               ║\n"
-        "╚═══════════════════════════════════════════════════════════════╝\n"
-        "\n"
-        "✅ Все переменные успешно загружены!\n"
-        "🤖 Бот готов к работе!"
+        "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО\n"
+        "📦 Версия: 2.1.0\n"
+        "✅ Переменные установлены\n"
+        "🤖 Бот активен 💪"
     )
     send_message(msg)
 
 # =====================================================================
-# ПАРСИНГ - ПРАВИЛЬНАЯ ВЕРСИЯ (ВИДИТ ВСЕ КАРТЫ)
+# ПАРСИНГ - с добавлением очков
 # =====================================================================
 def parse_game(text):
-    """Парсит игру и возвращает ВСЕ карты игрока и дилера"""
+    """Парсит игру и возвращает карты и очки игрока и дилера"""
     try:
         game_match = re.search(r'#N(\d+)', text)
         if not game_match:
@@ -247,11 +201,18 @@ def parse_game(text):
         player_part = parts[0].strip()
         dealer_part = parts[1].strip()
         
+        # Извлекаем очки игрока (число перед скобками)
+        player_score_match = re.search(r'(\d+)\s*\(', player_part)
+        player_score = int(player_score_match.group(1)) if player_score_match else 0
+        
+        # Извлекаем очки дилера
+        dealer_score_match = re.search(r'(\d+)\s*\(', dealer_part)
+        dealer_score = int(dealer_score_match.group(1)) if dealer_score_match else 0
+        
         # Извлекаем карты игрока из скобок
         player_cards_match = re.search(r'\(([^)]+)\)', player_part)
         if not player_cards_match:
             return None
-        
         player_cards_str = player_cards_match.group(1).strip()
         
         # Извлекаем карты дилера из скобок
@@ -310,7 +271,7 @@ def parse_game(text):
         player_cards = parse_cards(player_cards_str)
         dealer_cards = parse_cards(dealer_cards_str) if dealer_cards_str else []
         
-        print(f"✅ #N{game_number}: {len(player_cards)} карт игрока", flush=True)
+        print(f"✅ #N{game_number}: игрок {player_score} очков ({len(player_cards)} карт), дилер {dealer_score} очков ({len(dealer_cards)} карт)", flush=True)
         if player_cards:
             cards_str = ', '.join([f"{c['rank']}{c['suit']}" for c in player_cards])
             print(f"   🃏 Игрок: {cards_str}", flush=True)
@@ -322,6 +283,8 @@ def parse_game(text):
             "number": game_number,
             "player_cards": player_cards,
             "dealer_cards": dealer_cards,
+            "player_score": player_score,
+            "dealer_score": dealer_score,
             "text": text
         }
     except Exception as e:
@@ -358,11 +321,18 @@ def get_suit_by_position(position):
     return POSITION_SUITS.get(position, None)
 
 def is_valid_game(game_data):
-    """Дилер ОБЯЗАТЕЛЕН для прогноза"""
+    """Проверяет, подходит ли игра для прогноза: дилер обязателен, нет 21 очка"""
     player_cards = game_data.get("player_cards", [])
     dealer_cards = game_data.get("dealer_cards", [])
+    player_score = game_data.get("player_score", 0)
+    dealer_score = game_data.get("dealer_score", 0)
     
-    print(f"   Проверка для прогноза: игрок={len(player_cards)} карт, дилер={len(dealer_cards)} карт", flush=True)
+    print(f"   Проверка для прогноза: игрок={len(player_cards)} карт, дилер={len(dealer_cards)} карт, очки: {player_score}/{dealer_score}", flush=True)
+    
+    # Проверяем 21 очко
+    if player_score == 21 or dealer_score == 21:
+        print(f"⏭️ Пропускаем #N{game_data['number']}: у кого-то 21 очко (игрок {player_score}, дилер {dealer_score})", flush=True)
+        return False
     
     if len(player_cards) not in [3, 4]:
         print(f"⏭️ Пропускаем #N{game_data['number']}: у игрока {len(player_cards)} карт (нужно 3 или 4)", flush=True)
