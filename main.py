@@ -61,7 +61,6 @@ print("", flush=True)
 
 if not BOT_TOKEN or not CHANNEL_STATS or not CHANNEL_PROGNOZ:
     print("❌ КРИТИЧЕСКАЯ ОШИБКА: переменные окружения не заданы!", flush=True)
-    print("   Проверьте настройки Render!", flush=True)
     exit(1)
 
 print("✅ Все переменные успешно загружены!", flush=True)
@@ -229,7 +228,6 @@ def parse_game(text):
             return None
         game_number = int(game_match.group(1))
         
-        # Ищем разделитель
         parts = None
         if '◀️' in text:
             parts = text.split('◀️')
@@ -248,18 +246,15 @@ def parse_game(text):
         player_part = parts[0].strip()
         dealer_part = parts[1].strip()
         
-        # Извлекаем карты игрока из скобок
         player_cards_match = re.search(r'\(([^)]+)\)', player_part)
         if not player_cards_match:
             return None
         
         player_cards_str = player_cards_match.group(1).strip()
         
-        # Извлекаем карты дилера из скобок
         dealer_cards_match = re.search(r'\(([^)]+)\)', dealer_part)
         dealer_cards_str = dealer_cards_match.group(1).strip() if dealer_cards_match else ""
         
-        # ФУНКЦИЯ ДЛЯ ПАРСИНГА КАРТ
         def parse_cards(cards_str):
             cards = []
             i = 0
@@ -321,7 +316,6 @@ def parse_game(text):
         return None
 
 def get_highest_digit(cards):
-    """Находит самую старшую цифру (6-10) и её позицию"""
     if not cards:
         return None, None
     
@@ -351,27 +345,23 @@ def get_suit_by_position(position):
     return POSITION_SUITS.get(position, None)
 
 def is_valid_game(game_data):
-    """Проверяет, подходит ли игра для создания ПРОГНОЗА - ДИЛЕР ОБЯЗАТЕЛЕН"""
+    """Дилер ОБЯЗАТЕЛЕН для прогноза"""
     player_cards = game_data.get("player_cards", [])
     dealer_cards = game_data.get("dealer_cards", [])
     
     print(f"   Проверка для прогноза: игрок={len(player_cards)} карт, дилер={len(dealer_cards)} карт", flush=True)
     
-    # Для прогноза нужно 3 или 4 карты у игрока
     if len(player_cards) not in [3, 4]:
         print(f"⏭️ Пропускаем #N{game_data['number']}: у игрока {len(player_cards)} карт (нужно 3 или 4)", flush=True)
         return False
     
-    # ДИЛЕР ОБЯЗАТЕЛЬНО ДОЛЖЕН БЫТЬ (хотя бы 1 карта)
     if len(dealer_cards) == 0:
         print(f"⏭️ Пропускаем #N{game_data['number']}: у дилера 0 карт (нужна хотя бы 1)", flush=True)
         return False
     
-    # Если у игрока 3 карты - берем 3 игрока + 1 дилера
     if len(player_cards) == 3:
         return True
     
-    # Если у игрока 4 карты - проверяем наличие цифр (6-10)
     if len(player_cards) == 4:
         has_digit = False
         for card in player_cards:
@@ -385,9 +375,6 @@ def is_valid_game(game_data):
     
     return False
 
-# =====================================================================
-# ПРОГНОЗ - С ФИЛЬТРОМ СОВПАДЕНИЯ МАСТИ
-# =====================================================================
 def predict(game_data):
     game_num = game_data["number"]
     player_cards = game_data["player_cards"]
@@ -405,7 +392,6 @@ def predict(game_data):
         print(f"⚠️ Игра #{game_num}: {len(player_cards)} карт — не подходит", flush=True)
         return None
     
-    # Проверяем наличие цифр (6-10)
     has_digit = False
     for card in four_cards:
         if card.get("rank") in DIGIT_VALUES:
@@ -416,19 +402,16 @@ def predict(game_data):
         print(f"⏭️ Пропускаем #N{game_num}: нет цифр (6-10) в 4 картах", flush=True)
         return None
     
-    # Проверяем ПОВТОРЯЮЩИЕСЯ РАНГИ ТОЛЬКО ДЛЯ ЦИФР (6-10)
     digit_ranks = []
     for card in four_cards:
         rank = card.get("rank", "")
         if rank in DIGIT_VALUES:
             digit_ranks.append(rank)
     
-    # Если есть повторяющиеся цифры - пропускаем
     if len(digit_ranks) != len(set(digit_ranks)):
         print(f"⏭️ Пропускаем #N{game_num}: повторяющиеся цифры {digit_ranks}", flush=True)
         return None
     
-    # Находим старшую цифру
     highest_card, highest_position = get_highest_digit(four_cards)
     
     if not highest_card or not highest_position:
@@ -440,7 +423,6 @@ def predict(game_data):
         print(f"⚠️ Игра #{game_num}: позиция {highest_position} не определена", flush=True)
         return None
     
-    # ФИЛЬТР: если масть предсказания совпадает с мастью старшей карты - ПРОПУСКАЕМ
     if highest_card.get("suit") == predicted_suit:
         print(f"⏭️ Пропускаем #N{game_num}: масть старшей карты {highest_card['rank']}{highest_card['suit']} совпадает с предсказанием {predicted_suit}", flush=True)
         return None
@@ -460,11 +442,8 @@ def predict(game_data):
         "games": [target_game, target_game + 1, target_game + 2, target_game + 3]
     }
 
-# =====================================================================
-# ПРОВЕРКА РЕЗУЛЬТАТОВ - ПРОВЕРЯЕТ ЛЮБЫЕ ИГРЫ
-# =====================================================================
 def check_results(history, all_messages):
-    """Проверяет каждую игру - ТОЛЬКО у игрока, ЛЮБЫЕ карты, ЛЮБОЕ количество"""
+    """Проверяет результат - ТОЛЬКО у игрока, ЛЮБЫЕ карты"""
     for entry in history:
         if entry.get("status") != "pending":
             continue
@@ -492,13 +471,11 @@ def check_results(history, all_messages):
                 print(f"⏳ Ждем игру #N{game_to_check} для проверки масти {predicted_suit}", flush=True)
                 break
             
-            # ПАРСИМ ИГРУ (без проверки is_valid_game)
             game_data = parse_game(game_msg)
             if not game_data:
                 print(f"⚠️ Не удалось распарсить #N{game_to_check}", flush=True)
                 continue
             
-            # ПРОВЕРЯЕМ ТОЛЬКО У ИГРОКА, ЛЮБОЕ КОЛИЧЕСТВО КАРТ
             suit_found = False
             player_cards = game_data.get("player_cards", [])
             
@@ -645,7 +622,6 @@ def main():
     
     check_bot_status()
     
-    # ОТПРАВЛЯЕМ ПРИВЕТСТВИЕ В TELEGRAM
     try:
         send_startup_message()
         print("✅ Приветственное сообщение отправлено в Telegram", flush=True)
@@ -724,7 +700,6 @@ def main():
                 
                 print(f"📥 Получена игра #N{game_number}", flush=True)
                 
-                # ПРОВЕРЯЕМ НАЛИЧИЕ ✅ ИЛИ 🔰
                 if '✅' not in text and '🔰' not in text:
                     print(f"⏭️ #N{game_number} пропущена: нет ✅ или 🔰 (игра не завершена)", flush=True)
                     continue
@@ -746,4 +721,53 @@ def main():
                     print(f"⏭️ #N{game_number} не подходит по правилам", flush=True)
                     continue
                 
-                if current_time - LAST_PREDICT_TIME < PREDICT_INTER
+                if current_time - LAST_PREDICT_TIME < PREDICT_INTERVAL:
+                    print(f"⏳ Интервал: {int(current_time - LAST_PREDICT_TIME)} сек < {PREDICT_INTERVAL} сек", flush=True)
+                    continue
+                
+                prognoz = predict(game_data)
+                if prognoz:
+                    msg = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
+                    msg += f"📊 От игры: #N{game_data['number']}\n"
+                    msg += f"🃏 Масть: {prognoz['suit']}\n"
+                    msg += f"🎯 Целевая игра: #N{prognoz['target']}\n"
+                    msg += f"📈 3 игры догон\n"
+                    msg += f"⏰ {datetime.now(MOSCOW_TZ).strftime('%H:%M:%S')}"
+                    
+                    message_id = send_message(msg)
+                    if message_id:
+                        print(f"✅ ПРОГНОЗ ОТПРАВЛЕН: #N{prognoz['target']} → масть {prognoz['suit']}", flush=True)
+                        LAST_PREDICT_TIME = current_time
+                        PROCESSED_GAMES.add(game_number)
+                        
+                        history.append({
+                            "from_game": game_data["number"],
+                            "target": prognoz["target"],
+                            "suit": prognoz["suit"],
+                            "card": prognoz["card"],
+                            "time": datetime.now(MOSCOW_TZ).isoformat(),
+                            "status": "pending",
+                            "message_id": message_id
+                        })
+                        save_history(history)
+                        
+                        pending_count = len([h for h in history if h.get('status') == 'pending'])
+                        print(f"📊 Ожидающих прогнозов: {pending_count}", flush=True)
+            
+            check_results(history, all_messages)
+            history = clean_memory(history)
+            save_history(history)
+            
+            if len(PROCESSED_GAMES) > 500:
+                PROCESSED_GAMES.clear()
+            
+            time.sleep(1)
+            
+        except Exception as e:
+            print(f"❌ Ошибка: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            time.sleep(30)
+
+if __name__ == "__main__":
+    main()
