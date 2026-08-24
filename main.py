@@ -21,10 +21,10 @@ print("🃏 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10)", flush=True)
 print("=" * 60, flush=True)
 
 print("🔮 ОБНОВЛЕНИЕ УСПЕШНО УСТАНОВЛЕНО!")
-print("📦 Версия: 07v1.0")
+print("📦 Версия: 07v1.1")
 print("✅ Статус: Завершено")
-print("📌 Целевая игра = 0, догоны = 1,2,3")
 print("📌 Мгновенная проверка каждой игры")
+print("📌 Целевая игра = 0, догоны = 1,2,3")
 print("=" * 60, flush=True)
 
 # =====================================================================
@@ -336,7 +336,7 @@ def predict(game_data):
     }
 
 def check_results(history, all_messages):
-    """Проверяет результаты прогнозов — ТОЛЬКО ИГРОК, мгновенно"""
+    """Проверяет каждую игру отдельно и сразу обновляет результат"""
     for entry in history:
         if entry.get("status") != "pending":
             continue
@@ -353,7 +353,7 @@ def check_results(history, all_messages):
         found_game = None
         found_dogon = None
         
-        # Проверяем каждую игру отдельно (0 = целевая, 1,2,3 = догоны)
+        # Проверяем игры ПО ОДНОЙ
         for i in range(4):
             game_to_check = target + i
             game_msg = None
@@ -398,7 +398,7 @@ def check_results(history, all_messages):
             entry["status"] = "win"
             continue
         
-        # Если не нашли — проверяем, пришли ли все 4 игры
+        # Если все 4 игры пришли и масти нет — НЕ ЗАШЛО
         all_games_present = True
         for i in range(4):
             game_to_check = target + i
@@ -493,8 +493,8 @@ def main():
     print("   - Если несколько старших - пропускаем", flush=True)
     print("   - По позиции определяем масть (1→♣️, 2→♦️, 3→♥️, 4→♠️)", flush=True)
     print("   - Прогноз на 4 игры (целевая + 3 догона)", flush=True)
-    print("   - Проверка: ТОЛЬКО ИГРОК, мгновенный результат", flush=True)
-    print("   - Целевая игра = 0, догоны = 1,2,3", flush=True)
+    print("   - Проверка: ТОЛЬКО ИГРОК", flush=True)
+    print("   - Мгновенный результат: как только масть найдена", flush=True)
     print("=" * 60, flush=True)
     
     offset = get_offset()
@@ -566,6 +566,7 @@ def main():
                 if len(all_messages) > 500:
                     all_messages = all_messages[-500:]
                 
+                # ✅ МГНОВЕННАЯ ПРОВЕРКА ПОСЛЕ КАЖДОГО СООБЩЕНИЯ
                 check_results(history, all_messages)
                 
                 if game_number in PROCESSED_GAMES:
