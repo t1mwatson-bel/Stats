@@ -18,7 +18,7 @@ MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 sys.stdout.flush()
 
 # =====================================================================
-# КРАСИВОЕ ПРИВЕТСТВИЕ В ЛОГАХ
+# ПРИВЕТСТВИЕ
 # =====================================================================
 print("╔═══════════════════════════════════════════════════════════════╗", flush=True)
 print("║                                                               ║", flush=True)
@@ -218,7 +218,7 @@ def send_startup_message():
     send_message(msg)
 
 # =====================================================================
-# ПАРСИНГ
+# ПАРСИНГ - ПРАВИЛЬНАЯ ВЕРСИЯ
 # =====================================================================
 def parse_game(text):
     """Парсит игру и возвращает ВСЕ карты игрока и дилера"""
@@ -228,6 +228,7 @@ def parse_game(text):
             return None
         game_number = int(game_match.group(1))
         
+        # Ищем разделитель
         parts = None
         if '◀️' in text:
             parts = text.split('◀️')
@@ -246,23 +247,28 @@ def parse_game(text):
         player_part = parts[0].strip()
         dealer_part = parts[1].strip()
         
+        # Извлекаем карты игрока из скобок
         player_cards_match = re.search(r'\(([^)]+)\)', player_part)
         if not player_cards_match:
             return None
         
         player_cards_str = player_cards_match.group(1).strip()
         
+        # Извлекаем карты дилера из скобок
         dealer_cards_match = re.search(r'\(([^)]+)\)', dealer_part)
         dealer_cards_str = dealer_cards_match.group(1).strip() if dealer_cards_match else ""
         
+        # ФУНКЦИЯ ДЛЯ ПАРСИНГА КАРТ - ПРАВИЛЬНАЯ
         def parse_cards(cards_str):
             cards = []
             i = 0
             while i < len(cards_str):
+                # Пропускаем пробелы
                 if cards_str[i] == ' ':
                     i += 1
                     continue
                 
+                # Определяем ранг
                 rank = ''
                 if i + 1 < len(cards_str) and cards_str[i:i+2] == '10':
                     rank = '10'
@@ -277,8 +283,10 @@ def parse_game(text):
                     i += 1
                     continue
                 
+                # Определяем масть (с учетом эмодзи)
                 suit = ''
                 if i < len(cards_str):
+                    # Эмодзи мастей (2 байта)
                     if cards_str[i:i+2] == '♠️':
                         suit = '♠️'
                         i += 2
@@ -291,6 +299,7 @@ def parse_game(text):
                     elif cards_str[i:i+2] == '♥️':
                         suit = '♥️'
                         i += 2
+                    # Обычные символы мастей
                     elif cards_str[i] in '♠♣♦♥':
                         suit = cards_str[i].replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
                         i += 1
@@ -306,6 +315,15 @@ def parse_game(text):
         player_cards = parse_cards(player_cards_str)
         dealer_cards = parse_cards(dealer_cards_str) if dealer_cards_str else []
         
+        # Показываем все карты в логах
+        print(f"✅ #N{game_number}: {len(player_cards)} карт игрока", flush=True)
+        if player_cards:
+            cards_str = ', '.join([f"{c['rank']}{c['suit']}" for c in player_cards])
+            print(f"   🃏 Игрок: {cards_str}", flush=True)
+        if dealer_cards:
+            cards_str = ', '.join([f"{c['rank']}{c['suit']}" for c in dealer_cards])
+            print(f"   🃏 Дилер: {cards_str}", flush=True)
+        
         return {
             "number": game_number,
             "player_cards": player_cards,
@@ -313,6 +331,7 @@ def parse_game(text):
             "text": text
         }
     except Exception as e:
+        print(f"❌ Ошибка парсинга: {e}", flush=True)
         return None
 
 def get_highest_digit(cards):
@@ -699,6 +718,7 @@ def main():
                     all_messages = all_messages[-500:]
                 
                 print(f"📥 Получена игра #N{game_number}", flush=True)
+                print(f"📝 Текст: {text}", flush=True)
                 
                 if '✅' not in text and '🔰' not in text:
                     print(f"⏭️ #N{game_number} пропущена: нет ✅ или 🔰 (игра не завершена)", flush=True)
@@ -732,42 +752,4 @@ def main():
                     msg += f"🃏 Масть: {prognoz['suit']}\n"
                     msg += f"🎯 Целевая игра: #N{prognoz['target']}\n"
                     msg += f"📈 3 игры догон\n"
-                    msg += f"⏰ {datetime.now(MOSCOW_TZ).strftime('%H:%M:%S')}"
-                    
-                    message_id = send_message(msg)
-                    if message_id:
-                        print(f"✅ ПРОГНОЗ ОТПРАВЛЕН: #N{prognoz['target']} → масть {prognoz['suit']}", flush=True)
-                        LAST_PREDICT_TIME = current_time
-                        PROCESSED_GAMES.add(game_number)
-                        
-                        history.append({
-                            "from_game": game_data["number"],
-                            "target": prognoz["target"],
-                            "suit": prognoz["suit"],
-                            "card": prognoz["card"],
-                            "time": datetime.now(MOSCOW_TZ).isoformat(),
-                            "status": "pending",
-                            "message_id": message_id
-                        })
-                        save_history(history)
-                        
-                        pending_count = len([h for h in history if h.get('status') == 'pending'])
-                        print(f"📊 Ожидающих прогнозов: {pending_count}", flush=True)
-            
-            check_results(history, all_messages)
-            history = clean_memory(history)
-            save_history(history)
-            
-            if len(PROCESSED_GAMES) > 500:
-                PROCESSED_GAMES.clear()
-            
-            time.sleep(1)
-            
-        except Exception as e:
-            print(f"❌ Ошибка: {e}", flush=True)
-            import traceback
-            traceback.print_exc()
-            time.sleep(30)
-
-if __name__ == "__main__":
-    main()
+                    msg += f"⏰ {datetime.now(MOSCOW_TZ).strftime('%H
