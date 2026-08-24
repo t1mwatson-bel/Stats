@@ -21,8 +21,8 @@ print("🃏 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10)", flush=True)
 print("=" * 60, flush=True)
 
 print("🔮 ОБНОВЛЕНИЕ УСПЕШНО УСТАНОВЛЕНО!")
-print("📦 Версия: 15v1.0")
-print("✅ Статус: ПРОВЕРКА ТОЛЬКО ИГРОК")
+print("📦 Версия: 16v1.0")
+print("✅ Статус: ИСПРАВЛЕН ПАРСИНГ КАРТ")
 print("📌 Проверка каждой игры в реальном времени")
 print("📌 Целевая игра = 0, догоны = 1,2,3")
 print("=" * 60, flush=True)
@@ -171,10 +171,10 @@ def edit_message(message_id, text):
         return False
 
 # =====================================================================
-# ПАРСИНГ
+# ПАРСИНГ - ИСПРАВЛЕН
 # =====================================================================
 def parse_game(text):
-    """Парсит игру в формате: #N303. 12(K♣️8♠️) ◀️ 0() #T12"""
+    """Парсит игру и возвращает ВСЕ карты игрока и дилера"""
     try:
         game_match = re.search(r'#N(\d+)', text)
         if not game_match:
@@ -211,22 +211,72 @@ def parse_game(text):
         dealer_cards_match = re.search(r'\(([^)]+)\)', dealer_part)
         dealer_cards_str = dealer_cards_match.group(1).strip() if dealer_cards_match else ""
         
-        # Парсим карты игрока
-        player_cards = []
-        card_pattern = r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)'
+        # ФУНКЦИЯ ДЛЯ ПАРСИНГА КАРТ
+        def parse_cards(cards_str):
+            cards = []
+            i = 0
+            while i < len(cards_str):
+                # Пропускаем пробелы
+                if cards_str[i] == ' ':
+                    i += 1
+                    continue
+                
+                # Определяем ранг
+                rank = ''
+                if i + 1 < len(cards_str) and cards_str[i:i+2] == '10':
+                    rank = '10'
+                    i += 2
+                elif cards_str[i] in 'AKQJ':
+                    rank = cards_str[i]
+                    i += 1
+                elif cards_str[i].isdigit():
+                    rank = cards_str[i]
+                    i += 1
+                else:
+                    i += 1
+                    continue
+                
+                # Определяем масть
+                suit = ''
+                if i < len(cards_str):
+                    # Эмодзи мастей (2 байта)
+                    if cards_str[i:i+2] == '♠️':
+                        suit = '♠️'
+                        i += 2
+                    elif cards_str[i:i+2] == '♣️':
+                        suit = '♣️'
+                        i += 2
+                    elif cards_str[i:i+2] == '♦️':
+                        suit = '♦️'
+                        i += 2
+                    elif cards_str[i:i+2] == '♥️':
+                        suit = '♥️'
+                        i += 2
+                    # Обычные символы мастей
+                    elif cards_str[i] in '♠♣♦♥':
+                        suit = cards_str[i].replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
+                        i += 1
+                    else:
+                        i += 1
+                        continue
+                
+                if rank and suit:
+                    cards.append({"rank": rank, "suit": suit})
+            
+            return cards
         
-        for card in re.findall(card_pattern, player_cards_str):
-            rank, suit = card
-            suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
-            player_cards.append({"rank": rank, "suit": suit})
+        # Парсим карты
+        player_cards = parse_cards(player_cards_str)
+        dealer_cards = parse_cards(dealer_cards_str) if dealer_cards_str else []
         
-        # Парсим карты дилера
-        dealer_cards = []
-        if dealer_cards_str:
-            for card in re.findall(card_pattern, dealer_cards_str):
-                rank, suit = card
-                suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
-                dealer_cards.append({"rank": rank, "suit": suit})
+        # Показываем ВСЕ карты в логах
+        print(f"✅ #N{game_number}: {len(player_cards)} карт игрока", flush=True)
+        if player_cards:
+            cards_str = ', '.join([f"{c['rank']}{c['suit']}" for c in player_cards])
+            print(f"   🃏 Игрок: {cards_str}", flush=True)
+        if dealer_cards:
+            cards_str = ', '.join([f"{c['rank']}{c['suit']}" for c in dealer_cards])
+            print(f"   🃏 Дилер: {cards_str}", flush=True)
         
         return {
             "number": game_number,
@@ -235,6 +285,7 @@ def parse_game(text):
             "text": text
         }
     except Exception as e:
+        print(f"❌ Ошибка парсинга: {e}", flush=True)
         return None
 
 def get_highest_digit(cards):
@@ -271,6 +322,9 @@ def is_valid_game(game_data):
     """Проверяет, подходит ли игра для прогноза"""
     player_cards = game_data.get("player_cards", [])
     dealer_cards = game_data.get("dealer_cards", [])
+    
+    # Показываем в логах количество карт
+    print(f"   Проверка: игрок={len(player_cards)} карт, дилер={len(dealer_cards)} карт", flush=True)
     
     if len(player_cards) in [1, 2] or len(player_cards) >= 5:
         print(f"⏭️ Пропускаем #N{game_data['number']}: у игрока {len(player_cards)} карт (нужно 3 или 4)", flush=True)
@@ -354,7 +408,7 @@ def predict(game_data):
     }
 
 # =====================================================================
-# ПРОВЕРКА РЕЗУЛЬТАТОВ - ТОЛЬКО ИГРОК, ЛЮБЫЕ КАРТЫ
+# ПРОВЕРКА РЕЗУЛЬТАТОВ
 # =====================================================================
 def check_results(history, all_messages):
     """Проверяет каждую игру - ТОЛЬКО у игрока, ЛЮБОЕ количество карт"""
@@ -396,6 +450,7 @@ def check_results(history, all_messages):
             for card in game_data.get("player_cards", []):
                 if card.get("suit") == predicted_suit:
                     suit_found = True
+                    print(f"   Найдена масть {predicted_suit} у игрока в карте {card['rank']}{card['suit']}", flush=True)
                     break
             
             if suit_found:
@@ -523,7 +578,7 @@ def main():
     global LAST_PREDICT_TIME
     
     print("🔄 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10) ЗАПУЩЕН", flush=True)
-    print("✅ РЕЖИМ: ПРОВЕРКА ТОЛЬКО ИГРОК", flush=True)
+    print("✅ РЕЖИМ: ИСПРАВЛЕН ПАРСИНГ КАРТ", flush=True)
     print(f"📊 Читает канал: {CHANNEL_STATS}", flush=True)
     print(f"📤 Отправляет в: {CHANNEL_PROGNOZ}", flush=True)
     print("=" * 60, flush=True)
@@ -596,6 +651,7 @@ def main():
                     all_messages = all_messages[-500:]
                 
                 print(f"📥 Получена игра #N{game_number}", flush=True)
+                print(f"📝 Текст: {text}", flush=True)
                 
                 check_results(history, all_messages)
                 
