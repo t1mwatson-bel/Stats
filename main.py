@@ -218,7 +218,7 @@ def send_startup_message():
     send_message(msg)
 
 # =====================================================================
-# ПАРСИНГ - ПРАВИЛЬНАЯ ВЕРСИЯ
+# ПАРСИНГ - ПРАВИЛЬНАЯ ВЕРСИЯ (ВИДИТ ВСЕ КАРТЫ)
 # =====================================================================
 def parse_game(text):
     """Парсит игру и возвращает ВСЕ карты игрока и дилера"""
@@ -258,17 +258,15 @@ def parse_game(text):
         dealer_cards_match = re.search(r'\(([^)]+)\)', dealer_part)
         dealer_cards_str = dealer_cards_match.group(1).strip() if dealer_cards_match else ""
         
-        # ФУНКЦИЯ ДЛЯ ПАРСИНГА КАРТ - ПРАВИЛЬНАЯ
+        # ФУНКЦИЯ ДЛЯ ПАРСИНГА КАРТ
         def parse_cards(cards_str):
             cards = []
             i = 0
             while i < len(cards_str):
-                # Пропускаем пробелы
                 if cards_str[i] == ' ':
                     i += 1
                     continue
                 
-                # Определяем ранг
                 rank = ''
                 if i + 1 < len(cards_str) and cards_str[i:i+2] == '10':
                     rank = '10'
@@ -283,10 +281,8 @@ def parse_game(text):
                     i += 1
                     continue
                 
-                # Определяем масть (с учетом эмодзи)
                 suit = ''
                 if i < len(cards_str):
-                    # Эмодзи мастей (2 байта)
                     if cards_str[i:i+2] == '♠️':
                         suit = '♠️'
                         i += 2
@@ -299,7 +295,6 @@ def parse_game(text):
                     elif cards_str[i:i+2] == '♥️':
                         suit = '♥️'
                         i += 2
-                    # Обычные символы мастей
                     elif cards_str[i] in '♠♣♦♥':
                         suit = cards_str[i].replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
                         i += 1
@@ -315,7 +310,6 @@ def parse_game(text):
         player_cards = parse_cards(player_cards_str)
         dealer_cards = parse_cards(dealer_cards_str) if dealer_cards_str else []
         
-        # Показываем все карты в логах
         print(f"✅ #N{game_number}: {len(player_cards)} карт игрока", flush=True)
         if player_cards:
             cards_str = ', '.join([f"{c['rank']}{c['suit']}" for c in player_cards])
@@ -752,4 +746,42 @@ def main():
                     msg += f"🃏 Масть: {prognoz['suit']}\n"
                     msg += f"🎯 Целевая игра: #N{prognoz['target']}\n"
                     msg += f"📈 3 игры догон\n"
-                    msg += f"⏰ {datetime.now(MOSCOW_TZ).strftime('%H
+                    msg += f"⏰ {datetime.now(MOSCOW_TZ).strftime('%H:%M:%S')}"
+                    
+                    message_id = send_message(msg)
+                    if message_id:
+                        print(f"✅ ПРОГНОЗ ОТПРАВЛЕН: #N{prognoz['target']} → масть {prognoz['suit']}", flush=True)
+                        LAST_PREDICT_TIME = current_time
+                        PROCESSED_GAMES.add(game_number)
+                        
+                        history.append({
+                            "from_game": game_data["number"],
+                            "target": prognoz["target"],
+                            "suit": prognoz["suit"],
+                            "card": prognoz["card"],
+                            "time": datetime.now(MOSCOW_TZ).isoformat(),
+                            "status": "pending",
+                            "message_id": message_id
+                        })
+                        save_history(history)
+                        
+                        pending_count = len([h for h in history if h.get('status') == 'pending'])
+                        print(f"📊 Ожидающих прогнозов: {pending_count}", flush=True)
+            
+            check_results(history, all_messages)
+            history = clean_memory(history)
+            save_history(history)
+            
+            if len(PROCESSED_GAMES) > 500:
+                PROCESSED_GAMES.clear()
+            
+            time.sleep(1)
+            
+        except Exception as e:
+            print(f"❌ Ошибка: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            time.sleep(30)
+
+if __name__ == "__main__":
+    main()
