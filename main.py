@@ -21,8 +21,8 @@ print("🃏 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10)", flush=True)
 print("=" * 60, flush=True)
 
 print("🔮 ОБНОВЛЕНИЕ УСПЕШНО УСТАНОВЛЕНО!")
-print("📦 Версия: 12v1.0")
-print("✅ Статус: ИСПРАВЛЕН ПАРСИНГ (◀️)")
+print("📦 Версия: 15v1.0")
+print("✅ Статус: ПРОВЕРКА ТОЛЬКО ИГРОК")
 print("📌 Проверка каждой игры в реальном времени")
 print("📌 Целевая игра = 0, догоны = 1,2,3")
 print("=" * 60, flush=True)
@@ -171,34 +171,27 @@ def edit_message(message_id, text):
         return False
 
 # =====================================================================
-# ОСНОВНЫЕ ФУНКЦИИ - ИСПРАВЛЕН ПАРСИНГ (ДОБАВЛЕН ◀️)
+# ПАРСИНГ
 # =====================================================================
 def parse_game(text):
     """Парсит игру в формате: #N303. 12(K♣️8♠️) ◀️ 0() #T12"""
     try:
-        # Находим номер игры
         game_match = re.search(r'#N(\d+)', text)
         if not game_match:
             return None
         game_number = int(game_match.group(1))
         
-        # Ищем разделитель: ◀️, ▶️, ➡️, ⬅️, или дефис
+        # Ищем разделитель
         parts = None
-        
         if '◀️' in text:
             parts = text.split('◀️')
         elif '▶️' in text:
             parts = text.split('▶️')
-        elif '➡️' in text:
-            parts = text.split('➡️')
-        elif '⬅️' in text:
-            parts = text.split('⬅️')
         elif '-' in text:
             parts = text.split('-')
         elif '—' in text:
             parts = text.split('—')
         else:
-            print(f"❌ Нет разделителя в тексте: {text[:50]}", flush=True)
             return None
         
         if not parts or len(parts) < 2:
@@ -210,10 +203,7 @@ def parse_game(text):
         # Извлекаем карты игрока из скобок
         player_cards_match = re.search(r'\(([^)]+)\)', player_part)
         if not player_cards_match:
-            player_cards_match = re.search(r'\((.+?)\)', player_part)
-            if not player_cards_match:
-                print(f"❌ Не найдены карты игрока в скобках", flush=True)
-                return None
+            return None
         
         player_cards_str = player_cards_match.group(1).strip()
         
@@ -238,11 +228,6 @@ def parse_game(text):
                 suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
                 dealer_cards.append({"rank": rank, "suit": suit})
         
-        print(f"✅ #N{game_number}: {len(player_cards)} карт игрока", flush=True)
-        
-        if not player_cards:
-            return None
-        
         return {
             "number": game_number,
             "player_cards": player_cards,
@@ -250,7 +235,6 @@ def parse_game(text):
             "text": text
         }
     except Exception as e:
-        print(f"❌ Ошибка парсинга: {e}", flush=True)
         return None
 
 def get_highest_digit(cards):
@@ -369,8 +353,11 @@ def predict(game_data):
         "games": [target_game, target_game + 1, target_game + 2, target_game + 3]
     }
 
+# =====================================================================
+# ПРОВЕРКА РЕЗУЛЬТАТОВ - ТОЛЬКО ИГРОК, ЛЮБЫЕ КАРТЫ
+# =====================================================================
 def check_results(history, all_messages):
-    """Проверяет каждую игру в реальном времени"""
+    """Проверяет каждую игру - ТОЛЬКО у игрока, ЛЮБОЕ количество карт"""
     for entry in history:
         if entry.get("status") != "pending":
             continue
@@ -404,7 +391,7 @@ def check_results(history, all_messages):
                 print(f"⚠️ Не удалось распарсить #N{game_to_check}", flush=True)
                 continue
             
-            # Проверяем масть только у ИГРОКА
+            # ПРОВЕРЯЕМ ТОЛЬКО У ИГРОКА, ЛЮБОЕ КОЛИЧЕСТВО КАРТ
             suit_found = False
             for card in game_data.get("player_cards", []):
                 if card.get("suit") == predicted_suit:
@@ -508,7 +495,6 @@ def load_recent_messages():
     return []
 
 def check_bot_status():
-    """Диагностика статуса бота"""
     print("=" * 60, flush=True)
     print("🔍 ДИАГНОСТИКА СТАТУСА БОТА", flush=True)
     print(f"📊 Кэш: {len(load_history())} записей", flush=True)
@@ -537,7 +523,7 @@ def main():
     global LAST_PREDICT_TIME
     
     print("🔄 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10) ЗАПУЩЕН", flush=True)
-    print("✅ РЕЖИМ: ИСПРАВЛЕН ПАРСИНГ (◀️)", flush=True)
+    print("✅ РЕЖИМ: ПРОВЕРКА ТОЛЬКО ИГРОК", flush=True)
     print(f"📊 Читает канал: {CHANNEL_STATS}", flush=True)
     print(f"📤 Отправляет в: {CHANNEL_PROGNOZ}", flush=True)
     print("=" * 60, flush=True)
