@@ -342,7 +342,6 @@ def predict(game_data):
     }
 
 def check_results(history, all_messages):
-    """Проверяет результаты прогнозов — ТОЛЬКО ИГРОК"""
     for entry in history:
         if entry.get("status") != "pending":
             continue
@@ -358,41 +357,52 @@ def check_results(history, all_messages):
         found = False
         found_game = None
         found_dogon = None
-        checked_games = 0
         
+        # Проверяем игры ПО ОДНОЙ, как только они появляются
         for i in range(4):
             game_to_check = target + i
             game_msg = None
             
+            # Ищем игру в all_messages
             for msg in all_messages:
                 if f"#N{game_to_check}" in msg:
                     game_msg = msg
                     break
             
             if not game_msg:
+                # Если игра ещё не пришла — ждём дальше
                 break
             
-            checked_games += 1
             game_data = parse_game(game_msg)
             
             if game_data:
-                # ✅ Проверяем ТОЛЬКО игрока
+                # Проверяем игрока
                 for card in game_data["player_cards"]:
                     if card.get("suit") == predicted_suit:
                         found = True
                         found_game = game_to_check
                         found_dogon = i + 1
                         break
+                
+                # Если не нашли у игрока — проверяем дилера
+                if not found:
+                    for card in game_data["dealer_cards"]:
+                        if card.get("suit") == predicted_suit:
+                            found = True
+                            found_game = game_to_check
+                            found_dogon = i + 1
+                            break
             
             if found:
                 break
         
+        # Если нашли — СРАЗУ ставим результат
         if found:
             update_stats(found_dogon, "win")
             
-            original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
+            original_text = f"🔮 <b>ПРОГНОЗ</b>\n"
             original_text += f"📊 От игры: #N{from_game}\n"
-            original_text += f"🃏 Масть: {predicted_suit}\n"
+            original_text += f"🃏 Игрок масть: {predicted_suit}\n"
             original_text += f"🎯 Целевая игра: #N{target}\n"
             original_text += f"📈 3 игры догон\n"
             original_text += f"⏰ {entry.get('time', '')[:16]}"
@@ -406,12 +416,26 @@ def check_results(history, all_messages):
             entry["status"] = "win"
             continue
         
-        if checked_games == 4:
+        # Если не нашли — проверяем, все ли 4 игры пришли
+        all_games_present = True
+        for i in range(4):
+            game_to_check = target + i
+            found_msg = False
+            for msg in all_messages:
+                if f"#N{game_to_check}" in msg:
+                    found_msg = True
+                    break
+            if not found_msg:
+                all_games_present = False
+                break
+        
+        # Если все 4 игры есть и масти нет — НЕ ЗАШЛО
+        if all_games_present:
             update_stats(0, "lose")
             
-            original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
+            original_text = f"🔮 <b>ПРОГНОЗ</b>\n"
             original_text += f"📊 От игры: #N{from_game}\n"
-            original_text += f"🃏 Масть: {predicted_suit}\n"
+            original_text += f"🃏 Игрок масть: {predicted_suit}\n"
             original_text += f"🎯 Целевая игра: #N{target}\n"
             original_text += f"📈 3 игры догон\n"
             original_text += f"⏰ {entry.get('time', '')[:16]}"
