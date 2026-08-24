@@ -21,8 +21,8 @@ print("🃏 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10)", flush=True)
 print("=" * 60, flush=True)
 
 print("🔮 ОБНОВЛЕНИЕ УСПЕШНО УСТАНОВЛЕНО!")
-print("📦 Версия: 16v1.0")
-print("✅ Статус: ИСПРАВЛЕН ПАРСИНГ КАРТ")
+print("📦 Версия: 17v1.0")
+print("✅ Статус: ТОЛЬКО ✅ ИЛИ 🔰")
 print("📌 Проверка каждой игры в реальном времени")
 print("📌 Целевая игра = 0, догоны = 1,2,3")
 print("=" * 60, flush=True)
@@ -171,7 +171,7 @@ def edit_message(message_id, text):
         return False
 
 # =====================================================================
-# ПАРСИНГ - ИСПРАВЛЕН
+# ПАРСИНГ
 # =====================================================================
 def parse_game(text):
     """Парсит игру и возвращает ВСЕ карты игрока и дилера"""
@@ -216,12 +216,10 @@ def parse_game(text):
             cards = []
             i = 0
             while i < len(cards_str):
-                # Пропускаем пробелы
                 if cards_str[i] == ' ':
                     i += 1
                     continue
                 
-                # Определяем ранг
                 rank = ''
                 if i + 1 < len(cards_str) and cards_str[i:i+2] == '10':
                     rank = '10'
@@ -236,10 +234,8 @@ def parse_game(text):
                     i += 1
                     continue
                 
-                # Определяем масть
                 suit = ''
                 if i < len(cards_str):
-                    # Эмодзи мастей (2 байта)
                     if cards_str[i:i+2] == '♠️':
                         suit = '♠️'
                         i += 2
@@ -252,7 +248,6 @@ def parse_game(text):
                     elif cards_str[i:i+2] == '♥️':
                         suit = '♥️'
                         i += 2
-                    # Обычные символы мастей
                     elif cards_str[i] in '♠♣♦♥':
                         suit = cards_str[i].replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
                         i += 1
@@ -265,11 +260,9 @@ def parse_game(text):
             
             return cards
         
-        # Парсим карты
         player_cards = parse_cards(player_cards_str)
         dealer_cards = parse_cards(dealer_cards_str) if dealer_cards_str else []
         
-        # Показываем ВСЕ карты в логах
         print(f"✅ #N{game_number}: {len(player_cards)} карт игрока", flush=True)
         if player_cards:
             cards_str = ', '.join([f"{c['rank']}{c['suit']}" for c in player_cards])
@@ -323,7 +316,6 @@ def is_valid_game(game_data):
     player_cards = game_data.get("player_cards", [])
     dealer_cards = game_data.get("dealer_cards", [])
     
-    # Показываем в логах количество карт
     print(f"   Проверка: игрок={len(player_cards)} карт, дилер={len(dealer_cards)} карт", flush=True)
     
     if len(player_cards) in [1, 2] or len(player_cards) >= 5:
@@ -429,7 +421,6 @@ def check_results(history, all_messages):
         for i in range(max_games_to_check):
             game_to_check = target + i
             
-            # Ищем сообщение с этой игрой
             game_msg = None
             for msg in all_messages:
                 if f"#N{game_to_check}" in msg:
@@ -445,7 +436,6 @@ def check_results(history, all_messages):
                 print(f"⚠️ Не удалось распарсить #N{game_to_check}", flush=True)
                 continue
             
-            # ПРОВЕРЯЕМ ТОЛЬКО У ИГРОКА, ЛЮБОЕ КОЛИЧЕСТВО КАРТ
             suit_found = False
             for card in game_data.get("player_cards", []):
                 if card.get("suit") == predicted_suit:
@@ -578,7 +568,7 @@ def main():
     global LAST_PREDICT_TIME
     
     print("🔄 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10) ЗАПУЩЕН", flush=True)
-    print("✅ РЕЖИМ: ИСПРАВЛЕН ПАРСИНГ КАРТ", flush=True)
+    print("✅ РЕЖИМ: ТОЛЬКО ПОСЛЕ ✅ ИЛИ 🔰", flush=True)
     print(f"📊 Читает канал: {CHANNEL_STATS}", flush=True)
     print(f"📤 Отправляет в: {CHANNEL_PROGNOZ}", flush=True)
     print("=" * 60, flush=True)
@@ -652,6 +642,13 @@ def main():
                 
                 print(f"📥 Получена игра #N{game_number}", flush=True)
                 print(f"📝 Текст: {text}", flush=True)
+                
+                # ПРОВЕРЯЕМ НАЛИЧИЕ ✅ ИЛИ 🔰
+                if '✅' not in text and '🔰' not in text:
+                    print(f"⏭️ #N{game_number} пропущена: нет ✅ или 🔰 (игра не завершена)", flush=True)
+                    continue
+                else:
+                    print(f"✅ #N{game_number} имеет ✅ или 🔰 - игра завершена", flush=True)
                 
                 check_results(history, all_messages)
                 
