@@ -210,9 +210,11 @@ def parse_game(text):
         dealer_cards = parse_cards(dealer_cards_str) if dealer_cards_str else []
         print(f"✅ #N{game_number}: игрок {player_score} очков ({len(player_cards)} карт), дилер {dealer_score} очков ({len(dealer_cards)} карт)", flush=True)
         if player_cards:
-            print(f"   🃏 Игрок: {', '.join([f'{c['rank']}{c['suit']}' for c in player_cards])}", flush=True)
+            cards_str = ', '.join([f"{c['rank']}{c['suit']}" for c in player_cards])
+            print(f"   🃏 Игрок: {cards_str}", flush=True)
         if dealer_cards:
-            print(f"   🃏 Дилер: {', '.join([f'{c['rank']}{c['suit']}' for c in dealer_cards])}", flush=True)
+            cards_str = ', '.join([f"{c['rank']}{c['suit']}" for c in dealer_cards])
+            print(f"   🃏 Дилер: {cards_str}", flush=True)
         return {
             "number": game_number,
             "player_cards": player_cards,
@@ -334,7 +336,6 @@ def predict(game_data):
     }
 
 def check_results(history, all_messages):
-    """Проверяет результат только по завершенным играм (есть ✅ или 🔰)"""
     for entry in history:
         if entry.get("status") != "pending":
             continue
@@ -548,28 +549,25 @@ def main():
                 print(f"📥 Получена игра #N{game_number}", flush=True)
                 print(f"📝 Текст: {text}", flush=True)
 
-                # ЕСЛИ ИГРА ЗАВЕРШЕНА (есть ✅ или 🔰) - ТОЛЬКО ПРОВЕРЯЕМ РЕЗУЛЬТАТ
+                # ЕСЛИ ИГРА ЗАВЕРШЕНА - ТОЛЬКО ПРОВЕРКА РЕЗУЛЬТАТА
                 if '✅' in text or '🔰' in text:
                     print(f"✅ #N{game_number} завершена - проверяем результаты", flush=True)
                     check_results(history, all_messages)
-                    # НЕ СОЗДАЕМ ПРОГНОЗ ИЗ ЗАВЕРШЕННОЙ ИГРЫ
                     continue
 
-                # ЕСЛИ ИГРА НЕ ЗАВЕРШЕНА - ПРОВЕРЯЕМ, МОЖЕМ ЛИ СОЗДАТЬ ПРОГНОЗ
+                # НЕЗАВЕРШЕННАЯ ИГРА - ПРОВЕРЯЕМ ВОЗМОЖНОСТЬ СОЗДАНИЯ ПРОГНОЗА
                 print(f"⏭️ #N{game_number} не завершена (нет ✅ или 🔰)", flush=True)
 
-                # Проверяем, есть ли ожидающие прогнозы
+                # НЕ ДАЁМ НОВЫЙ ПРОГНОЗ, ПОКА НЕ ЗАЙДЁТ ТЕКУЩИЙ
                 pending_exists = any(h.get('status') == 'pending' for h in history)
                 if pending_exists:
                     print(f"⏳ Есть ожидающий прогноз, новый не даём", flush=True)
                     continue
 
-                # Проверяем, не обработана ли уже эта игра
                 if game_number in PROCESSED_GAMES:
                     print(f"⏭️ #N{game_number} уже обработана", flush=True)
                     continue
 
-                # Парсим и проверяем на валидность для прогноза
                 game_data = parse_game(text)
                 if not game_data:
                     print(f"❌ Не удалось распарсить #N{game_number}", flush=True)
