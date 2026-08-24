@@ -21,8 +21,8 @@ print("🃏 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10)", flush=True)
 print("=" * 60, flush=True)
 
 print("🔮 ОБНОВЛЕНИЕ УСПЕШНО УСТАНОВЛЕНО!")
-print("📦 Версия: 17v1.0")
-print("✅ Статус: ТОЛЬКО ✅ ИЛИ 🔰")
+print("📦 Версия: 18v1.0")
+print("✅ Статус: ТОЛЬКО ЦИФРЫ (6-10)")
 print("📌 Проверка каждой игры в реальном времени")
 print("📌 Целевая игра = 0, догоны = 1,2,3")
 print("=" * 60, flush=True)
@@ -341,6 +341,9 @@ def is_valid_game(game_data):
     
     return True
 
+# =====================================================================
+# ПРОГНОЗ - ИСПРАВЛЕНА ПРОВЕРКА ПОВТОРОВ
+# =====================================================================
 def predict(game_data):
     game_num = game_data["number"]
     player_cards = game_data["player_cards"]
@@ -358,6 +361,7 @@ def predict(game_data):
         print(f"⚠️ Игра #{game_num}: {len(player_cards)} карт — не подходит", flush=True)
         return None
     
+    # Проверяем наличие цифр (6-10)
     has_digit = False
     for card in four_cards:
         if card.get("rank") in DIGIT_VALUES:
@@ -368,11 +372,19 @@ def predict(game_data):
         print(f"⏭️ Пропускаем #N{game_num}: нет цифр (6-10) в 4 картах", flush=True)
         return None
     
-    ranks = [c["rank"] for c in four_cards]
-    if len(ranks) != len(set(ranks)):
-        print(f"⏭️ Пропускаем #N{game_num}: повторяющиеся ранги", flush=True)
+    # Проверяем ПОВТОРЯЮЩИЕСЯ РАНГИ ТОЛЬКО ДЛЯ ЦИФР (6-10)
+    digit_ranks = []
+    for card in four_cards:
+        rank = card.get("rank", "")
+        if rank in DIGIT_VALUES:
+            digit_ranks.append(rank)
+    
+    # Если есть повторяющиеся цифры - пропускаем
+    if len(digit_ranks) != len(set(digit_ranks)):
+        print(f"⏭️ Пропускаем #N{game_num}: повторяющиеся цифры {digit_ranks}", flush=True)
         return None
     
+    # Находим старшую цифру
     highest_card, highest_position = get_highest_digit(four_cards)
     
     if not highest_card or not highest_position:
