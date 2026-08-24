@@ -16,16 +16,31 @@ MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 # ПРИНУДИТЕЛЬНЫЙ ВЫВОД ЛОГОВ
 # =====================================================================
 sys.stdout.flush()
-print("=" * 60, flush=True)
-print("🃏 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10)", flush=True)
-print("=" * 60, flush=True)
 
-print("🔮 ОБНОВЛЕНИЕ УСПЕШНО УСТАНОВЛЕНО!")
-print("📦 Версия: 18v1.0")
-print("✅ Статус: ТОЛЬКО ЦИФРЫ (6-10)")
-print("📌 Проверка каждой игры в реальном времени")
-print("📌 Целевая игра = 0, догоны = 1,2,3")
-print("=" * 60, flush=True)
+# =====================================================================
+# КРАСИВОЕ ПРИВЕТСТВИЕ
+# =====================================================================
+print("╔═══════════════════════════════════════════════════════════════╗", flush=True)
+print("║                                                               ║", flush=True)
+print("║              🃏  ПРОГНОЗИСТ ПО ЦИФРАМ  🃏                    ║", flush=True)
+print("║                     Версия 2.0.0                             ║", flush=True)
+print("║                                                               ║", flush=True)
+print("╠═══════════════════════════════════════════════════════════════╣", flush=True)
+print("║                                                               ║", flush=True)
+print("║  ✅  ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!                          ║", flush=True)
+print("║  📦  Версия: 2.0.0                                          ║", flush=True)
+print("║  🚀  Статус: АКТИВЕН                                       ║", flush=True)
+print("║                                                               ║", flush=True)
+print("║  📌  НОВОВВЕДЕНИЯ:                                           ║", flush=True)
+print("║  •  Мгновенная проверка каждой игры                          ║", flush=True)
+print("║  •  Фильтр: пропуск при совпадении масти с картой            ║", flush=True)
+print("║  •  Только завершенные игры (✅ или 🔰)                      ║", flush=True)
+print("║  •  Проверка только у игрока                                 ║", flush=True)
+print("║                                                               ║", flush=True)
+print("║  🎯  Целевая игра = 0, догоны = 1, 2, 3                     ║", flush=True)
+print("║                                                               ║", flush=True)
+print("╚═══════════════════════════════════════════════════════════════╝", flush=True)
+print("", flush=True)
 
 # =====================================================================
 # ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
@@ -38,16 +53,18 @@ CHANNEL_STATS = os.getenv('CHANNEL_STATS_ID')
 CHANNEL_PROGNOZ = os.getenv('CHANNEL_PROGNOZ_ID')
 
 print("🔍 ДИАГНОСТИКА ПЕРЕМЕННЫХ:", flush=True)
-print(f"BOT_TOKEN: {BOT_TOKEN[:5] if BOT_TOKEN else 'НЕ ЗАДАН'}", flush=True)
-print(f"CHANNEL_STATS_ID: {CHANNEL_STATS if CHANNEL_STATS else 'НЕ ЗАДАН'}", flush=True)
-print(f"CHANNEL_PROGNOZ_ID: {CHANNEL_PROGNOZ if CHANNEL_PROGNOZ else 'НЕ ЗАДАН'}", flush=True)
-print("=" * 60, flush=True)
+print(f"   BOT_TOKEN: {BOT_TOKEN[:5] if BOT_TOKEN else '❌ НЕ ЗАДАН'}", flush=True)
+print(f"   CHANNEL_STATS_ID: {CHANNEL_STATS if CHANNEL_STATS else '❌ НЕ ЗАДАН'}", flush=True)
+print(f"   CHANNEL_PROGNOZ_ID: {CHANNEL_PROGNOZ if CHANNEL_PROGNOZ else '❌ НЕ ЗАДАН'}", flush=True)
+print("", flush=True)
 
 if not BOT_TOKEN or not CHANNEL_STATS or not CHANNEL_PROGNOZ:
-    print("❌ ОШИБКА: переменные окружения не заданы!", flush=True)
+    print("❌ КРИТИЧЕСКАЯ ОШИБКА: переменные окружения не заданы!", flush=True)
+    print("   Проверьте настройки Render!", flush=True)
     exit(1)
 
-print("✅ Все переменные заданы!", flush=True)
+print("✅ Все переменные успешно загружены!", flush=True)
+print("", flush=True)
 
 # =====================================================================
 # НАСТРОЙКИ
@@ -342,7 +359,7 @@ def is_valid_game(game_data):
     return True
 
 # =====================================================================
-# ПРОГНОЗ - ИСПРАВЛЕНА ПРОВЕРКА ПОВТОРОВ
+# ПРОГНОЗ - С ФИЛЬТРОМ СОВПАДЕНИЯ МАСТИ
 # =====================================================================
 def predict(game_data):
     game_num = game_data["number"]
@@ -394,6 +411,11 @@ def predict(game_data):
     predicted_suit = get_suit_by_position(highest_position)
     if not predicted_suit:
         print(f"⚠️ Игра #{game_num}: позиция {highest_position} не определена", flush=True)
+        return None
+    
+    # ⚠️ ФИЛЬТР: если масть предсказания совпадает с мастью старшей карты - ПРОПУСКАЕМ
+    if highest_card.get("suit") == predicted_suit:
+        print(f"⏭️ Пропускаем #N{game_num}: масть старшей карты {highest_card['rank']}{highest_card['suit']} совпадает с предсказанием {predicted_suit}", flush=True)
         return None
     
     rank = highest_card["rank"]
@@ -552,13 +574,15 @@ def load_recent_messages():
     return []
 
 def check_bot_status():
-    print("=" * 60, flush=True)
-    print("🔍 ДИАГНОСТИКА СТАТУСА БОТА", flush=True)
-    print(f"📊 Кэш: {len(load_history())} записей", flush=True)
-    print(f"🔄 Обработано игр: {len(PROCESSED_GAMES)}", flush=True)
-    print(f"⏰ Последний прогноз: {datetime.fromtimestamp(LAST_PREDICT_TIME).strftime('%H:%M:%S') if LAST_PREDICT_TIME > 0 else 'Нет'}", flush=True)
-    print(f"📤 Канал отправки: {CHANNEL_PROGNOZ}", flush=True)
-    print(f"📥 Канал чтения: {CHANNEL_STATS}", flush=True)
+    print("╔═══════════════════════════════════════════════════════════════╗", flush=True)
+    print("║              🔍 ДИАГНОСТИКА СТАТУСА БОТА                    ║", flush=True)
+    print("╠═══════════════════════════════════════════════════════════════╣", flush=True)
+    print(f"║  📊 Кэш: {len(load_history())} записей", flush=True)
+    print(f"║  🔄 Обработано игр: {len(PROCESSED_GAMES)}", flush=True)
+    print(f"║  ⏰ Последний прогноз: {datetime.fromtimestamp(LAST_PREDICT_TIME).strftime('%H:%M:%S') if LAST_PREDICT_TIME > 0 else 'Нет'}", flush=True)
+    print(f"║  📤 Канал отправки: {CHANNEL_PROGNOZ}", flush=True)
+    print(f"║  📥 Канал чтения: {CHANNEL_STATS}", flush=True)
+    print("╚═══════════════════════════════════════════════════════════════╝", flush=True)
     
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getMe"
     try:
@@ -571,7 +595,7 @@ def check_bot_status():
     except Exception as e:
         print(f"❌ Ошибка проверки бота: {e}", flush=True)
     
-    print("=" * 60, flush=True)
+    print("", flush=True)
 
 # =====================================================================
 # ОСНОВНОЙ ЦИКЛ
@@ -579,11 +603,8 @@ def check_bot_status():
 def main():
     global LAST_PREDICT_TIME
     
-    print("🔄 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10) ЗАПУЩЕН", flush=True)
-    print("✅ РЕЖИМ: ТОЛЬКО ПОСЛЕ ✅ ИЛИ 🔰", flush=True)
-    print(f"📊 Читает канал: {CHANNEL_STATS}", flush=True)
-    print(f"📤 Отправляет в: {CHANNEL_PROGNOZ}", flush=True)
-    print("=" * 60, flush=True)
+    print("🔄 ЗАПУСК ПРОГНОЗИСТА...", flush=True)
+    print("", flush=True)
     
     check_bot_status()
     
@@ -594,11 +615,16 @@ def main():
     print("📥 Загрузка последних сообщений из канала...", flush=True)
     all_messages = load_recent_messages()
     print(f"📥 Загружено сообщений: {len(all_messages)}", flush=True)
+    print("", flush=True)
     
     check_results(history, all_messages)
     
     last_cleanup_time = time.time()
     last_stats_time = time.time()
+    
+    print("🚀 БОТ ГОТОВ К РАБОТЕ!", flush=True)
+    print("=" * 60, flush=True)
+    print("", flush=True)
     
     while True:
         try:
@@ -653,7 +679,6 @@ def main():
                     all_messages = all_messages[-500:]
                 
                 print(f"📥 Получена игра #N{game_number}", flush=True)
-                print(f"📝 Текст: {text}", flush=True)
                 
                 # ПРОВЕРЯЕМ НАЛИЧИЕ ✅ ИЛИ 🔰
                 if '✅' not in text and '🔰' not in text:
