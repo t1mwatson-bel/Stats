@@ -20,6 +20,12 @@ print("=" * 60, flush=True)
 print("🃏 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10)", flush=True)
 print("=" * 60, flush=True)
 
+print("🔮 ОБНОВЛЕНИЕ УСПЕШНО УСТАНОВЛЕНО!")
+print("📦 Версия: 06v1.0")
+print("✅ Статус: Завершено")
+print("📌 Исправлено: проверка каждой игры отдельно (мгновенный результат)")
+print("=" * 60, flush=True)
+
 # =====================================================================
 # ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
 # =====================================================================
@@ -261,7 +267,6 @@ def is_valid_game(game_data):
     
     # 3. Если у игрока 4 карты → проверяем, есть ли цифры
     if len(player_cards) == 4:
-        # Проверяем, есть ли хоть одна цифра (6-10)
         has_digit = False
         for card in player_cards:
             if card.get("rank") in DIGIT_VALUES:
@@ -337,6 +342,7 @@ def predict(game_data):
     }
 
 def check_results(history, all_messages):
+    """Проверяет результаты прогнозов — каждая игра отдельно, мгновенный результат"""
     for entry in history:
         if entry.get("status") != "pending":
             continue
@@ -352,61 +358,82 @@ def check_results(history, all_messages):
         found = False
         found_game = None
         found_dogon = None
+        checked_games = 0
         
+        # Проверяем 4 игры по очереди
         for i in range(4):
             game_to_check = target + i
+            game_msg = None
+            
+            # Ищем игру в all_messages
             for msg in all_messages:
                 if f"#N{game_to_check}" in msg:
-                    game_data = parse_game(msg)
-                    if game_data:
-                        for card in game_data["player_cards"]:
-                            if card.get("suit") == predicted_suit:
-                                found = True
-                                found_game = game_to_check
-                                found_dogon = i + 1
-                                break
-                    if found:
+                    game_msg = msg
+                    break
+            
+            if not game_msg:
+                # Игра ещё не пришла — выходим, ждём дальше
+                break
+            
+            checked_games += 1
+            game_data = parse_game(game_msg)
+            
+            if game_data:
+                # Проверяем игрока
+                for card in game_data["player_cards"]:
+                    if card.get("suit") == predicted_suit:
+                        found = True
+                        found_game = game_to_check
+                        found_dogon = i + 1
                         break
+                
+                # Если не нашли у игрока — проверяем дилера
+                if not found:
+                    for card in game_data["dealer_cards"]:
+                        if card.get("suit") == predicted_suit:
+                            found = True
+                            found_game = game_to_check
+                            found_dogon = i + 1
+                            break
+            
             if found:
                 break
         
-        all_games_present = True
-        for i in range(4):
-            game_to_check = target + i
-            found_msg = False
-            for msg in all_messages:
-                if f"#N{game_to_check}" in msg:
-                    found_msg = True
-                    break
-            if not found_msg:
-                all_games_present = False
-                break
-        
-        if not all_games_present:
-            continue
-        
+        # Если нашли — ЗАШЛО (СРАЗУ!)
         if found:
             update_stats(found_dogon, "win")
-        else:
-            update_stats(0, "lose")
-        
-        original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
-        original_text += f"📊 От игры: #N{from_game}\n"
-        original_text += f"🃏 Цифра: {predicted_suit}\n"
-        original_text += f"🎯 Целевая игра: #N{target}\n"
-        original_text += f"📈 3 игры догон\n"
-        original_text += f"⏰ {entry.get('time', '')[:16]}"
-        
-        if found:
+            
+            original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
+            original_text += f"📊 От игры: #N{from_game}\n"
+            original_text += f"🃏 Масть: {predicted_suit}\n"
+            original_text += f"🎯 Целевая игра: #N{target}\n"
+            original_text += f"📈 3 игры догон\n"
+            original_text += f"⏰ {entry.get('time', '')[:16]}"
+            
             if found_dogon == 1:
                 result_text = f"\n\n✅ <b>ЗАШЛО</b> в целевой игре: #N{found_game}"
             else:
                 result_text = f"\n\n✅ <b>ЗАШЛО</b> на догоне {found_dogon-1}: #N{found_game}"
-        else:
-            result_text = f"\n\n❌ <b>НЕ ЗАШЛО</b> (3 догона проверены до #N{target+3})"
+            
+            edit_message(message_id, original_text + result_text)
+            entry["status"] = "win"
+            continue
         
-        edit_message(message_id, original_text + result_text)
-        entry["status"] = "win" if found else "loss"
+        # Если не нашли — проверяем, пришли ли все 4 игры
+        if checked_games == 4:
+            # Все 4 игры проверены, масти нет — НЕ ЗАШЛО
+            update_stats(0, "lose")
+            
+            original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
+            original_text += f"📊 От игры: #N{from_game}\n"
+            original_text += f"🃏 Масть: {predicted_suit}\n"
+            original_text += f"🎯 Целевая игра: #N{target}\n"
+            original_text += f"📈 3 игры догон\n"
+            original_text += f"⏰ {entry.get('time', '')[:16]}"
+            result_text = f"\n\n❌ <b>НЕ ЗАШЛО</b> (3 догона проверены до #N{target+3})"
+            
+            edit_message(message_id, original_text + result_text)
+            entry["status"] = "lose"
 
 def save_history(history):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
@@ -476,6 +503,7 @@ def main():
     print("   - Если несколько старших - пропускаем", flush=True)
     print("   - По позиции определяем масть (1→♣️, 2→♦️, 3→♥️, 4→♠️)", flush=True)
     print("   - Прогноз на 4 игры (целевая + 3 догона)", flush=True)
+    print("   - Проверка: ИГРОК + ДИЛЕР (мгновенный результат)", flush=True)
     print("=" * 60, flush=True)
     
     offset = get_offset()
