@@ -576,6 +576,7 @@ def main():
                 if len(all_messages) > 500:
                     all_messages = all_messages[-500:]
                 
+                 # ✅ ВЫЗЫВАЙ check_results СРАЗУ ПОСЛЕ ДОБАВЛЕНИЯ
                 check_results(history, all_messages)
                 
                 if game_number in PROCESSED_GAMES:
