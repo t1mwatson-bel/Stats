@@ -4,7 +4,7 @@ import requests
 import json
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 
 # =====================================================================
@@ -189,12 +189,12 @@ def parse_game(text):
         player_part = parts[0].strip()
         dealer_part = parts[1].strip()
         
-        player_match = re.search(r'(\d+)\(([^)]+)\)', player_part)
+        player_match = re.search(r'(\d+)§([^)]+)!§', player_part)
         if not player_match:
             return None
         player_cards_str = player_match.group(2).strip()
         
-        dealer_match = re.search(r'(\d+)\(([^)]+)\)', dealer_part)
+        dealer_match = re.search(r'(\d+)§([^)]+)!§', dealer_part)
         dealer_cards_str = dealer_match.group(2).strip() if dealer_match else ""
         
         player_cards = []
@@ -354,7 +354,7 @@ def check_results(history, all_messages):
         found_dogon = None
         
         # Проверяем игры ПО ОДНОЙ
-        for i in range(4):
+        for i in range(4):  # Проверяем целевую и 3 догона
             game_to_check = target + i
             game_msg = None
             
@@ -369,6 +369,7 @@ def check_results(history, all_messages):
             game_data = parse_game(game_msg)
             
             if game_data:
+                # Проверка масти в картах игрока
                 for card in game_data["player_cards"]:
                     if card.get("suit") == predicted_suit:
                         found = True
@@ -412,18 +413,34 @@ def check_results(history, all_messages):
                 break
         
         if all_games_present:
-            update_stats(0, "lose")
+            # Проверяем, зашла ли масть хотя бы в одном из догона
+            suit_found_in_dogon = False
+            for i in range(1, 4):  # Проверяем только догоны
+                game_to_check = target + i
+                for msg in all_messages:
+                    if f"#N{game_to_check}" in msg:
+                        game_data = parse_game(msg)
+                        if game_data:
+                            for card in game_data["player_cards"]:
+                                if card.get("suit") == predicted_suit:
+                                    suit_found_in_dogon = True
+                                    break
+                if suit_found_in_dogon:
+                    break
             
-            original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
-            original_text += f"📊 От игры: #N{from_game}\n"
-            original_text += f"🃏 Масть: {predicted_suit}\n"
-            original_text += f"🎯 Целевая игра: #N{target}\n"
-            original_text += f"📈 3 игры догон\n"
-            original_text += f"⏰ {entry.get('time', '')[:16]}"
-            result_text = f"\n\n❌ <b>НЕ ЗАШЛО</b> (3 догона проверены до #N{target+3})"
-            
-            edit_message(message_id, original_text + result_text)
-            entry["status"] = "lose"
+            if not suit_found_in_dogon:
+                update_stats(0, "lose")
+                
+                original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
+                original_text += f"📊 От игры: #N{from_game}\n"
+                original_text += f"🃏 Масть: {predicted_suit}\n"
+                original_text += f"🎯 Целевая игра: #N{target}\n"
+                original_text += f"📈 3 игры догон\n"
+                original_text += f"⏰ {entry.get('time', '')[:16]}"
+                result_text = f"\n\n❌ <b>НЕ ЗАШЛО</b> (3 догона проверены до #N{target+3})"
+                
+                edit_message(message_id, original_text + result_text)
+                entry["status"] = "lose"
 
 def save_history(history):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
