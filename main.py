@@ -23,12 +23,12 @@ sys.stdout.flush()
 print("╔═══════════════════════════════════════════════════════════════╗", flush=True)
 print("║                                                               ║", flush=True)
 print("║              🃏  ПРОГНОЗИСТ ПО ЦИФРАМ  🃏                    ║", flush=True)
-print("║                     Версия 2.0.0                             ║", flush=True)
+print("║                     Версия 2.1.0                             ║", flush=True)
 print("║                                                               ║", flush=True)
 print("╠═══════════════════════════════════════════════════════════════╣", flush=True)
 print("║                                                               ║", flush=True)
 print("║  ✅  ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!                          ║", flush=True)
-print("║  📦  Версия: 2.0.0                                          ║", flush=True)
+print("║  📦  Версия: 2.1.0                                          ║", flush=True)
 print("║  🚀  Статус: АКТИВЕН                                       ║", flush=True)
 print("║                                                               ║", flush=True)
 print("║  📌  НОВОВВЕДЕНИЯ:                                           ║", flush=True)
@@ -36,6 +36,7 @@ print("║  •  Мгновенная проверка каждой игры    
 print("║  •  Фильтр: пропуск при совпадении масти с картой            ║", flush=True)
 print("║  •  Только завершенные игры (✅ или 🔰)                      ║", flush=True)
 print("║  •  Проверка только у игрока                                 ║", flush=True)
+print("║  •  Дилер обязателен для прогноза                            ║", flush=True)
 print("║                                                               ║", flush=True)
 print("║  🎯  Целевая игра = 0, догоны = 1, 2, 3                     ║", flush=True)
 print("║                                                               ║", flush=True)
@@ -193,12 +194,12 @@ def send_startup_message():
         "╔═══════════════════════════════════════════════════════════════╗\n"
         "║                                                               ║\n"
         "║              🃏  ПРОГНОЗИСТ ПО ЦИФРАМ  🃏                    ║\n"
-        "║                     Версия 2.0.0                             ║\n"
+        "║                     Версия 2.1.0                             ║\n"
         "║                                                               ║\n"
         "╠═══════════════════════════════════════════════════════════════╣\n"
         "║                                                               ║\n"
         "║  ✅  ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!                          ║\n"
-        "║  📦  Версия: 2.0.0                                          ║\n"
+        "║  📦  Версия: 2.1.0                                          ║\n"
         "║  🚀  Статус: АКТИВЕН                                       ║\n"
         "║                                                               ║\n"
         "║  📌  НОВОВВЕДЕНИЯ:                                           ║\n"
@@ -206,10 +207,14 @@ def send_startup_message():
         "║  •  Фильтр: пропуск при совпадении масти с картой            ║\n"
         "║  •  Только завершенные игры (✅ или 🔰)                      ║\n"
         "║  •  Проверка только у игрока                                 ║\n"
+        "║  •  Дилер обязателен для прогноза                            ║\n"
         "║                                                               ║\n"
         "║  🎯  Целевая игра = 0, догоны = 1, 2, 3                     ║\n"
         "║                                                               ║\n"
-        "╚═══════════════════════════════════════════════════════════════╝"
+        "╚═══════════════════════════════════════════════════════════════╝\n"
+        "\n"
+        "✅ Все переменные успешно загружены!\n"
+        "🤖 Бот готов к работе!"
     )
     send_message(msg)
 
@@ -346,20 +351,27 @@ def get_suit_by_position(position):
     return POSITION_SUITS.get(position, None)
 
 def is_valid_game(game_data):
-    """Проверяет, подходит ли игра для прогноза"""
+    """Проверяет, подходит ли игра для создания ПРОГНОЗА - ДИЛЕР ОБЯЗАТЕЛЕН"""
     player_cards = game_data.get("player_cards", [])
     dealer_cards = game_data.get("dealer_cards", [])
     
-    if len(player_cards) in [1, 2] or len(player_cards) >= 5:
+    print(f"   Проверка для прогноза: игрок={len(player_cards)} карт, дилер={len(dealer_cards)} карт", flush=True)
+    
+    # Для прогноза нужно 3 или 4 карты у игрока
+    if len(player_cards) not in [3, 4]:
         print(f"⏭️ Пропускаем #N{game_data['number']}: у игрока {len(player_cards)} карт (нужно 3 или 4)", flush=True)
         return False
     
+    # ДИЛЕР ОБЯЗАТЕЛЬНО ДОЛЖЕН БЫТЬ (хотя бы 1 карта)
+    if len(dealer_cards) == 0:
+        print(f"⏭️ Пропускаем #N{game_data['number']}: у дилера 0 карт (нужна хотя бы 1)", flush=True)
+        return False
+    
+    # Если у игрока 3 карты - берем 3 игрока + 1 дилера
     if len(player_cards) == 3:
-        if len(dealer_cards) == 0:
-            print(f"⏭️ Пропускаем #N{game_data['number']}: у игрока 3 карты, но у дилера 0", flush=True)
-            return False
         return True
     
+    # Если у игрока 4 карты - проверяем наличие цифр (6-10)
     if len(player_cards) == 4:
         has_digit = False
         for card in player_cards:
@@ -371,7 +383,7 @@ def is_valid_game(game_data):
             return False
         return True
     
-    return True
+    return False
 
 # =====================================================================
 # ПРОГНОЗ - С ФИЛЬТРОМ СОВПАДЕНИЯ МАСТИ
@@ -449,7 +461,7 @@ def predict(game_data):
     }
 
 # =====================================================================
-# ПРОВЕРКА РЕЗУЛЬТАТОВ - ИСПРАВЛЕНА
+# ПРОВЕРКА РЕЗУЛЬТАТОВ - ПРОВЕРЯЕТ ЛЮБЫЕ ИГРЫ
 # =====================================================================
 def check_results(history, all_messages):
     """Проверяет каждую игру - ТОЛЬКО у игрока, ЛЮБЫЕ карты, ЛЮБОЕ количество"""
@@ -608,3 +620,130 @@ def check_bot_status():
     print(f"║  📤 Канал отправки: {CHANNEL_PROGNOZ}", flush=True)
     print(f"║  📥 Канал чтения: {CHANNEL_STATS}", flush=True)
     print("╚═══════════════════════════════════════════════════════════════╝", flush=True)
+    
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getMe"
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            bot_info = response.json()
+            print(f"✅ Бот активен: @{bot_info['result']['username']}", flush=True)
+        else:
+            print(f"❌ Бот недоступен: {response.status_code}", flush=True)
+    except Exception as e:
+        print(f"❌ Ошибка проверки бота: {e}", flush=True)
+    
+    print("", flush=True)
+
+# =====================================================================
+# ОСНОВНОЙ ЦИКЛ
+# =====================================================================
+def main():
+    global LAST_PREDICT_TIME
+    
+    print("🔄 ЗАПУСК ПРОГНОЗИСТА...", flush=True)
+    print("", flush=True)
+    
+    check_bot_status()
+    
+    # ОТПРАВЛЯЕМ ПРИВЕТСТВИЕ В TELEGRAM
+    try:
+        send_startup_message()
+        print("✅ Приветственное сообщение отправлено в Telegram", flush=True)
+    except Exception as e:
+        print(f"⚠️ Не удалось отправить приветствие: {e}", flush=True)
+    
+    offset = get_offset()
+    history = load_history()
+    last_reset_date = datetime.now(MOSCOW_TZ).date()
+    
+    print("📥 Загрузка последних сообщений из канала...", flush=True)
+    all_messages = load_recent_messages()
+    print(f"📥 Загружено сообщений: {len(all_messages)}", flush=True)
+    print("", flush=True)
+    
+    check_results(history, all_messages)
+    
+    last_cleanup_time = time.time()
+    last_stats_time = time.time()
+    
+    print("🚀 БОТ ГОТОВ К РАБОТЕ!", flush=True)
+    print("=" * 60, flush=True)
+    print("", flush=True)
+    
+    while True:
+        try:
+            current_time = time.time()
+            current_date = datetime.now(MOSCOW_TZ).date()
+            current_hour = datetime.now(MOSCOW_TZ).hour
+            
+            if current_date != last_reset_date and current_hour == 3:
+                print("🔄 Ежедневный сброс кэша...", flush=True)
+                history = []
+                save_history(history)
+                all_messages = []
+                last_reset_date = current_date
+                continue
+            
+            if current_time - last_cleanup_time > CLEANUP_INTERVAL:
+                history = clean_memory(history)
+                save_history(history)
+                last_cleanup_time = current_time
+            
+            if current_time - last_stats_time > 3600:
+                send_stats_report()
+                last_stats_time = current_time
+            
+            updates = get_updates(offset)
+            
+            for update in updates.get("result", []):
+                offset = update["update_id"] + 1
+                save_offset(offset)
+                
+                channel_post = update.get("channel_post")
+                edited_post = update.get("edited_channel_post")
+                post = channel_post if channel_post else edited_post
+                if not post:
+                    continue
+                
+                chat_id = post.get("chat", {}).get("id")
+                if str(chat_id) != str(CHANNEL_STATS):
+                    continue
+                
+                text = post.get("text", "")
+                if not text or "#N" not in text:
+                    continue
+                
+                game_id_match = re.search(r'#N(\d+)', text)
+                if not game_id_match:
+                    continue
+                game_number = int(game_id_match.group(1))
+                
+                all_messages.append(text)
+                if len(all_messages) > 500:
+                    all_messages = all_messages[-500:]
+                
+                print(f"📥 Получена игра #N{game_number}", flush=True)
+                
+                # ПРОВЕРЯЕМ НАЛИЧИЕ ✅ ИЛИ 🔰
+                if '✅' not in text and '🔰' not in text:
+                    print(f"⏭️ #N{game_number} пропущена: нет ✅ или 🔰 (игра не завершена)", flush=True)
+                    continue
+                else:
+                    print(f"✅ #N{game_number} имеет ✅ или 🔰 - игра завершена", flush=True)
+                
+                check_results(history, all_messages)
+                
+                if game_number in PROCESSED_GAMES:
+                    print(f"⏭️ #N{game_number} уже обработана", flush=True)
+                    continue
+                
+                game_data = parse_game(text)
+                if not game_data:
+                    print(f"❌ Не удалось распарсить #N{game_number}", flush=True)
+                    continue
+                
+                if not is_valid_game(game_data):
+                    print(f"⏭️ #N{game_number} не подходит по правилам", flush=True)
+                    continue
+                
+                if current_time - LAST_PREDICT_TIME < PREDICT_INTER
