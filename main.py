@@ -21,8 +21,8 @@ print("🃏 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10)", flush=True)
 print("=" * 60, flush=True)
 
 print("🔮 ОБНОВЛЕНИЕ УСПЕШНО УСТАНОВЛЕНО!")
-print("📦 Версия: 08v1.0")
-print("✅ Статус: МГНОВЕННАЯ ПРОВЕРКА")
+print("📦 Версия: 09v1.0")
+print("✅ Статус: ДИАГНОСТИКА ПАРСИНГА")
 print("📌 Проверка каждой игры в реальном времени")
 print("📌 Целевая игра = 0, догоны = 1,2,3")
 print("=" * 60, flush=True)
@@ -58,13 +58,13 @@ STATS_FILE = "stats_digits.json"
 MAX_HISTORY = 200
 PROCESSED_GAMES = set()
 LAST_PREDICT_TIME = 0
-PREDICT_INTERVAL = 3  # 3 секунды между прогнозами
+PREDICT_INTERVAL = 3
 CLEANUP_INTERVAL = 3600
 
 POSITION_SUITS = {1: "♣️", 2: "♦️", 3: "♥️", 4: "♠️"}
 
 # =====================================================================
-# ТВОЯ ТАБЛИЦА ДЛЯ ЦИФР (только 6-10)
+# ТАБЛИЦА ДЛЯ ЦИФР (только 6-10)
 # =====================================================================
 DIGIT_VALUES = {
     '6': 6, '7': 7, '8': 8, '9': 9, '10': 10
@@ -130,7 +130,7 @@ def send_stats_report():
     send_message(msg)
 
 # =====================================================================
-# ФУНКЦИИ
+# ФУНКЦИИ ТЕЛЕГРАМ
 # =====================================================================
 def get_updates(offset):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
@@ -170,44 +170,151 @@ def edit_message(message_id, text):
         print(f"❌ Ошибка редактирования: {e}", flush=True)
         return False
 
+# =====================================================================
+# ДИАГНОСТИКА ПАРСИНГА
+# =====================================================================
+def debug_parse_game(text):
+    """Детальная диагностика парсинга"""
+    print("=" * 60, flush=True)
+    print("🔍 ДИАГНОСТИКА ПАРСИНГА", flush=True)
+    print(f"📝 ТЕКСТ: {text}", flush=True)
+    print(f"📏 Длина: {len(text)} символов", flush=True)
+    
+    # Проверяем наличие #N
+    game_match = re.search(r'#N(\d+)', text)
+    if game_match:
+        print(f"✅ Найден номер игры: #N{game_match.group(1)}", flush=True)
+    else:
+        print("❌ НЕ НАЙДЕН #N", flush=True)
+        print("=" * 60, flush=True)
+        return None
+    
+    # Проверяем наличие разделителя
+    if '-' in text:
+        print("✅ Найден разделитель '-'", flush=True)
+        parts = text.split('-')
+        print(f"   Частей: {len(parts)}", flush=True)
+        if len(parts) >= 2:
+            print(f"   Часть 1: {parts[0][:50]}...", flush=True)
+            print(f"   Часть 2: {parts[1][:50]}...", flush=True)
+    elif '—' in text:
+        print("✅ Найден разделитель '—'", flush=True)
+        parts = text.split('—')
+        print(f"   Частей: {len(parts)}", flush=True)
+    else:
+        print("❌ НЕ НАЙДЕН разделитель '-' или '—'", flush=True)
+        print("=" * 60, flush=True)
+        return None
+    
+    # Проверяем паттерн карт
+    card_pattern = r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)'
+    matches = re.findall(card_pattern, text)
+    if matches:
+        print(f"✅ Найдено карт: {len(matches)}", flush=True)
+        for i, (rank, suit) in enumerate(matches, 1):
+            print(f"   Карта {i}: {rank}{suit}", flush=True)
+    else:
+        print("❌ КАРТЫ НЕ НАЙДЕНЫ!", flush=True)
+        print(f"   Ищем паттерн: {card_pattern}", flush=True)
+        
+        # Показываем все символы в тексте
+        print("   Уникальные символы в тексте:", flush=True)
+        for char in sorted(set(text)):
+            if char.isprintable():
+                print(f"     '{char}' (код: {ord(char)})", flush=True)
+            else:
+                print(f"     (код: {ord(char)})", flush=True)
+        
+        print("=" * 60, flush=True)
+        return None
+    
+    # Проверяем § !§
+    if '§' in text and '!§' in text:
+        print("✅ Найдены маркеры § и !§", flush=True)
+        # Находим все вхождения
+        all_matches = re.findall(r'§([^)]+)!§', text)
+        if all_matches:
+            print(f"   Найдено блоков: {len(all_matches)}", flush=True)
+            for i, block in enumerate(all_matches, 1):
+                print(f"   Блок {i}: {block[:30]}...", flush=True)
+    else:
+        print("❌ НЕ НАЙДЕНЫ маркеры § и !§", flush=True)
+        print("=" * 60, flush=True)
+        return None
+    
+    print("=" * 60, flush=True)
+    return True
+
+# =====================================================================
+# ОСНОВНЫЕ ФУНКЦИИ
+# =====================================================================
 def parse_game(text):
     """Парсит игру и возвращает карты игрока и дилера"""
     try:
+        print(f"🔍 Парсинг: {text[:100]}...", flush=True)
+        
         game_match = re.search(r'#N(\d+)', text)
         if not game_match:
+            print(f"❌ Нет #N в тексте", flush=True)
             return None
         game_number = int(game_match.group(1))
         
+        # Очищаем текст от эмодзи
         clean_text = text
-        for symbol in ['✅', '🔰', '▶️', '◀️', '⚠️']:
+        for symbol in ['✅', '🔰', '▶️', '◀️', '⚠️', '❌', '⭕', '🔄', '♦️', '♥️', '♣️', '♠️']:
             clean_text = clean_text.replace(symbol, '')
         
-        parts = clean_text.split('-')
+        # Ищем разделитель
+        if '-' in clean_text:
+            parts = clean_text.split('-')
+        elif '—' in clean_text:
+            parts = clean_text.split('—')
+        else:
+            print(f"❌ Нет разделителя", flush=True)
+            return None
+        
         if len(parts) < 2:
+            print(f"❌ Мало частей: {len(parts)}", flush=True)
             return None
         
         player_part = parts[0].strip()
         dealer_part = parts[1].strip()
         
+        # Ищем карты игрока
         player_match = re.search(r'(\d+)§([^)]+)!§', player_part)
         if not player_match:
-            return None
+            # Пробуем альтернативный паттерн
+            player_match = re.search(r'(\d+)§(.+?)!§', player_part)
+            if not player_match:
+                print(f"❌ Не найден игрок в: {player_part[:50]}", flush=True)
+                return None
+        
         player_cards_str = player_match.group(2).strip()
         
+        # Ищем карты дилера
         dealer_match = re.search(r'(\d+)§([^)]+)!§', dealer_part)
         dealer_cards_str = dealer_match.group(2).strip() if dealer_match else ""
         
+        # Парсим карты игрока
         player_cards = []
         for card in re.findall(r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)', player_cards_str):
             rank, suit = card
+            # Нормализуем масть
             suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
             player_cards.append({"rank": rank, "suit": suit})
         
+        # Парсим карты дилера
         dealer_cards = []
-        for card in re.findall(r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)', dealer_cards_str):
-            rank, suit = card
-            suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
-            dealer_cards.append({"rank": rank, "suit": suit})
+        if dealer_cards_str:
+            for card in re.findall(r'([AKQJ]|10|\d)([♠♣♦♥]|♠️|♣️|♦️|♥️)', dealer_cards_str):
+                rank, suit = card
+                suit = suit.replace('♠', '♠️').replace('♣', '♣️').replace('♦', '♦️').replace('♥', '♥️')
+                dealer_cards.append({"rank": rank, "suit": suit})
+        
+        print(f"✅ #N{game_number}: {len(player_cards)} карт игрока, {len(dealer_cards)} карт дилера", flush=True)
+        
+        if player_cards:
+            print(f"   Карты игрока: {', '.join([c['rank']+c['suit'] for c in player_cards])}", flush=True)
         
         return {
             "number": game_number,
@@ -217,6 +324,8 @@ def parse_game(text):
         }
     except Exception as e:
         print(f"❌ Ошибка парсинга: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         return None
 
 def get_highest_digit(cards):
@@ -250,7 +359,7 @@ def get_suit_by_position(position):
     return POSITION_SUITS.get(position, None)
 
 def is_valid_game(game_data):
-    """Проверяет, подходит ли игра для прогноза (ПРАВИЛО 4 КАРТ)"""
+    """Проверяет, подходит ли игра для прогноза"""
     player_cards = game_data.get("player_cards", [])
     dealer_cards = game_data.get("dealer_cards", [])
     
@@ -349,13 +458,10 @@ def check_results(history, all_messages):
         if not predicted_suit or not message_id:
             continue
         
-        # Проверяем игры ПО ПОРЯДКУ (целевая, потом догоны)
         max_games_to_check = 4
-        checked_games = []
         
         for i in range(max_games_to_check):
             game_to_check = target + i
-            checked_games.append(game_to_check)
             
             # Ищем сообщение с этой игрой
             game_msg = None
@@ -365,11 +471,9 @@ def check_results(history, all_messages):
                     break
             
             if not game_msg:
-                # Если игра еще не пришла - выходим, ждем следующую
                 print(f"⏳ Ждем игру #N{game_to_check} для проверки масти {predicted_suit}", flush=True)
                 break
             
-            # Проверяем масть в этой игре
             game_data = parse_game(game_msg)
             if not game_data:
                 print(f"⚠️ Не удалось распарсить #N{game_to_check}", flush=True)
@@ -383,16 +487,11 @@ def check_results(history, all_messages):
                     break
             
             if suit_found:
-                # ✅ МАСТЬ НАШЛАСЬ! Мгновенно обновляем результат
                 print(f"🎯 МАСТЬ {predicted_suit} НАЙДЕНА в игре #N{game_to_check}!", flush=True)
                 
-                # Определяем номер догона
-                dogon_number = i  # 0 = целевая, 1,2,3 = догоны
-                
-                # Обновляем статистику
+                dogon_number = i
                 update_stats(dogon_number, "win")
                 
-                # Обновляем сообщение с результатом
                 original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
                 original_text += f"📊 От игры: #N{from_game}\n"
                 original_text += f"🃏 Масть: {predicted_suit}\n"
@@ -412,17 +511,13 @@ def check_results(history, all_messages):
                 save_history(history)
                 
                 print(f"✅ Прогноз #N{from_game} → #N{target} ЗАШЕЛ на игре #N{game_to_check}", flush=True)
-                return  # Выходим, прогноз уже зашел
+                return
             
-            # Если масть не найдена, но это не последняя игра - проверяем дальше
             if i == max_games_to_check - 1:
-                # Это была последняя игра (3-й догон) - масть не найдена
                 print(f"❌ Масть {predicted_suit} НЕ НАЙДЕНА за {max_games_to_check} игр", flush=True)
                 
-                # Обновляем статистику (проигрыш)
                 update_stats(0, "lose")
                 
-                # Обновляем сообщение
                 original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
                 original_text += f"📊 От игры: #N{from_game}\n"
                 original_text += f"🃏 Масть: {predicted_suit}\n"
@@ -497,7 +592,6 @@ def check_bot_status():
     print(f"📤 Канал отправки: {CHANNEL_PROGNOZ}", flush=True)
     print(f"📥 Канал чтения: {CHANNEL_STATS}", flush=True)
     
-    # Проверяем доступность бота
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getMe"
     try:
         response = requests.get(url, timeout=5)
@@ -518,24 +612,11 @@ def main():
     global LAST_PREDICT_TIME
     
     print("🔄 ПРОГНОЗИСТ ПО ЦИФРАМ (6-10) ЗАПУЩЕН", flush=True)
-    print("✅ РЕЖИМ: МГНОВЕННАЯ ПРОВЕРКА КАЖДОЙ ИГРЫ", flush=True)
+    print("✅ РЕЖИМ: ДИАГНОСТИКА ПАРСИНГА", flush=True)
     print(f"📊 Читает канал: {CHANNEL_STATS}", flush=True)
     print(f"📤 Отправляет в: {CHANNEL_PROGNOZ}", flush=True)
-    print(f"⏰ Часовой пояс: {datetime.now(MOSCOW_TZ).strftime('%H:%M:%S')} (МСК)", flush=True)
-    print("=" * 60, flush=True)
-    print("📌 ПРАВИЛА:", flush=True)
-    print("   - Берём 4 карты для прогноза:", flush=True)
-    print("     * Если у игрока 3 карты → 3 игрока + 1-я дилера", flush=True)
-    print("     * Если у игрока 4 карты → 4 игрока", flush=True)
-    print("   - Находим старшую цифру (10>9>8>7>6)", flush=True)
-    print("   - Если несколько старших - пропускаем", flush=True)
-    print("   - По позиции определяем масть (1→♣️, 2→♦️, 3→♥️, 4→♠️)", flush=True)
-    print("   - Прогноз на 4 игры (целевая + 3 догона)", flush=True)
-    print("   - Проверка: ТОЛЬКО ИГРОК", flush=True)
-    print("   - МГНОВЕННЫЙ РЕЗУЛЬТАТ: как только масть найдена", flush=True)
     print("=" * 60, flush=True)
     
-    # Диагностика
     check_bot_status()
     
     offset = get_offset()
@@ -546,8 +627,12 @@ def main():
     all_messages = load_recent_messages()
     print(f"📥 Загружено сообщений: {len(all_messages)}", flush=True)
     
-    # Проверяем все ожидающие прогнозы
-    print("🔄 Проверка ожидающих прогнозов...", flush=True)
+    # Показываем первые 3 сообщения для диагностики
+    if all_messages:
+        print("📝 Примеры сообщений из канала:", flush=True)
+        for i, msg in enumerate(all_messages[:3], 1):
+            print(f"   Сообщение {i}: {msg[:150]}...", flush=True)
+    
     check_results(history, all_messages)
     
     last_cleanup_time = time.time()
@@ -559,31 +644,23 @@ def main():
             current_date = datetime.now(MOSCOW_TZ).date()
             current_hour = datetime.now(MOSCOW_TZ).hour
             
-            # Ежедневный сброс
             if current_date != last_reset_date and current_hour == 3:
                 print("🔄 Ежедневный сброс кэша...", flush=True)
                 history = []
                 save_history(history)
                 all_messages = []
                 last_reset_date = current_date
-                print("✅ Кэш сброшен, начинаем новый цикл", flush=True)
                 continue
             
-            # Очистка кэша
             if current_time - last_cleanup_time > CLEANUP_INTERVAL:
-                print("🧹 Запуск плановой очистки кэша...", flush=True)
                 history = clean_memory(history)
                 save_history(history)
-                print(f"🧹 Кэш очищен. Записей в истории: {len(history)}", flush=True)
                 last_cleanup_time = current_time
             
-            # Отправка статистики
             if current_time - last_stats_time > 3600:
-                print("📊 Отправка статистики...", flush=True)
                 send_stats_report()
                 last_stats_time = current_time
             
-            # Получаем обновления
             updates = get_updates(offset)
             
             for update in updates.get("result", []):
@@ -609,17 +686,18 @@ def main():
                     continue
                 game_number = int(game_id_match.group(1))
                 
-                # Добавляем сообщение в историю
                 all_messages.append(text)
                 if len(all_messages) > 500:
                     all_messages = all_messages[-500:]
                 
                 print(f"📥 Получена игра #N{game_number}", flush=True)
+                print(f"📝 Текст: {text[:200]}...", flush=True)
                 
-                # ✅ МГНОВЕННАЯ ПРОВЕРКА КАЖДОЙ ИГРЫ
+                # Запускаем диагностику парсинга
+                debug_parse_game(text)
+                
                 check_results(history, all_messages)
                 
-                # Проверяем, подходит ли игра для прогноза
                 if game_number in PROCESSED_GAMES:
                     print(f"⏭️ #N{game_number} уже обработана", flush=True)
                     continue
@@ -633,13 +711,10 @@ def main():
                     print(f"⏭️ #N{game_number} не подходит по правилам", flush=True)
                     continue
                 
-                # Проверка интервала
-                time_since_last = current_time - LAST_PREDICT_TIME
-                if time_since_last < PREDICT_INTERVAL:
-                    print(f"⏳ Интервал: {int(time_since_last)} сек < {PREDICT_INTERVAL} сек, пропускаем", flush=True)
+                if current_time - LAST_PREDICT_TIME < PREDICT_INTERVAL:
+                    print(f"⏳ Интервал: {int(current_time - LAST_PREDICT_TIME)} сек < {PREDICT_INTERVAL} сек", flush=True)
                     continue
                 
-                # ✅ СОЗДАЕМ ПРОГНОЗ
                 prognoz = predict(game_data)
                 if prognoz:
                     msg = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
@@ -655,7 +730,6 @@ def main():
                         LAST_PREDICT_TIME = current_time
                         PROCESSED_GAMES.add(game_number)
                         
-                        # Сохраняем в историю
                         history.append({
                             "from_game": game_data["number"],
                             "target": prognoz["target"],
@@ -669,23 +743,18 @@ def main():
                         
                         pending_count = len([h for h in history if h.get('status') == 'pending'])
                         print(f"📊 Ожидающих прогнозов: {pending_count}", flush=True)
-                    else:
-                        print(f"❌ Не удалось отправить прогноз для #N{prognoz['target']}", flush=True)
             
-            # Проверка результатов
             check_results(history, all_messages)
             history = clean_memory(history)
             save_history(history)
             
-            # Очистка PROCESSED_GAMES
             if len(PROCESSED_GAMES) > 500:
                 PROCESSED_GAMES.clear()
-                print("🧹 Очищен список обработанных игр", flush=True)
             
-            time.sleep(1)  # Быстрая проверка каждую секунду
+            time.sleep(1)
             
         except Exception as e:
-            print(f"❌ Ошибка в основном цикле: {e}", flush=True)
+            print(f"❌ Ошибка: {e}", flush=True)
             import traceback
             traceback.print_exc()
             time.sleep(30)
