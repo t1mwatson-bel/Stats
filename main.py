@@ -48,7 +48,7 @@ PROCESSED_GAMES = set()
 LAST_PREDICT_TIME = 0
 PREDICT_INTERVAL = 3
 CLEANUP_INTERVAL = 3600
-TIMEOUT_SECONDS = 300
+TIMEOUT_SECONDS = 300  # 5 минут
 MAX_GAME_GAP = 15
 
 # Финансовые параметры
@@ -183,7 +183,7 @@ def send_startup_message():
     balance = load_balance()
     msg = (
         "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО\n"
-        "📦 Версия: 3.0.0\n"
+        "📦 Версия: 3.2.0\n"
         "✅ Переменные установлены\n"
         f"💰 Баланс: {balance:.2f}₽\n"
         "🤖 Бот активен 💪"
@@ -399,7 +399,7 @@ def predict(game_data):
     }
 
 # =====================================================================
-# ПРОВЕРКА РЕЗУЛЬТАТОВ (С ФИНАНСАМИ)
+# ПРОВЕРКА РЕЗУЛЬТАТОВ (С ПЕРЕЗАПУСКОМ ТАЙМАУТА ПРИ ПЕРЕХОДЕ НА СЛЕДУЮЩИЙ ДОГОН)
 # =====================================================================
 def check_results(history, all_messages):
     for entry in history:
@@ -410,6 +410,7 @@ def check_results(history, all_messages):
         from_game = entry.get("from_game")
         message_id = entry.get("message_id")
         created_time = entry.get("time", "")
+        current_dogon = entry.get("current_dogon", 0)
         if not predicted_suit or not message_id:
             continue
 
@@ -421,14 +422,11 @@ def check_results(history, all_messages):
             time_diff = 0
         if time_diff > TIMEOUT_SECONDS:
             print(f"⏰ Таймаут! Прогноз #N{from_game} → #N{target} висит {int(time_diff // 60)} мин", flush=True)
-            
             balance = load_balance()
-            bet = get_bet(0)
+            bet = get_bet(current_dogon)
             balance -= bet
             save_balance(balance)
-            
-            update_stats(0, "lose")
-            
+            update_stats(current_dogon, "lose")
             original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
             result_text = f"\n\n⏰ <b>ТАЙМАУТ</b> (не дождались завершения)\n💰 -{bet:.2f}₽ | Баланс: {balance:.2f}₽"
             edit_message(message_id, original_text + result_text)
@@ -436,31 +434,6 @@ def check_results(history, all_messages):
             save_history(history)
             print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ (таймаут)", flush=True)
             continue
-
-        # === ПРОВЕРКА НА УСТАРЕВАНИЕ НОМЕРА ===
-        if all_messages:
-            max_game = 0
-            for msg in all_messages:
-                match = re.search(r'#N(\d+)', msg)
-                if match:
-                    max_game = max(max_game, int(match.group(1)))
-            if max_game - target > MAX_GAME_GAP:
-                print(f"⏰ Игра #N{target} сильно устарела (текущая ~#N{max_game})", flush=True)
-                
-                balance = load_balance()
-                bet = get_bet(0)
-                balance -= bet
-                save_balance(balance)
-                
-                update_stats(0, "lose")
-                
-                original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
-                result_text = f"\n\n❌ <b>НЕ ЗАШЛО</b> (игра устарела)\n💰 -{bet:.2f}₽ | Баланс: {balance:.2f}₽"
-                edit_message(message_id, original_text + result_text)
-                entry["status"] = "lose"
-                save_history(history)
-                print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ (устарел)", flush=True)
-                continue
 
         # === ОСНОВНАЯ ПРОВЕРКА (ПО ДИЛЕРУ) ===
         max_games_to_check = 4
@@ -483,8 +456,12 @@ def check_results(history, all_messages):
             suit_found = False
             dealer_cards = game_data.get("dealer_cards", [])
             if not dealer_cards:
-                print(f"⚠️ Нет карт дилера в #N{game_to_check}", flush=True)
+                print(f"⚠️ Нет карт дилера в #N{game_to_check}, переходим к следующему догону", flush=True)
+                entry["current_dogon"] = i + 1
+                entry["time"] = datetime.now(MOSCOW_TZ).isoformat()
+                save_history(history)
                 continue
+
             print(f"   Проверка #N{game_to_check}: {len(dealer_cards)} карт дилера", flush=True)
             for card in dealer_cards:
                 print(f"      Карта: {card['rank']}{card['suit']}", flush=True)
@@ -492,27 +469,23 @@ def check_results(history, all_messages):
                     suit_found = True
                     print(f"   ✅ Найдена масть {predicted_suit} у дилера в карте {card['rank']}{card['suit']}", flush=True)
                     break
-            
+
             if suit_found:
                 print(f"🎯 МАСТЬ {predicted_suit} НАЙДЕНА у дилера в игре #N{game_to_check}!", flush=True)
                 dogon_number = i
                 bet = get_bet(dogon_number)
                 win_amount = bet * COEFFICIENT
-                
                 balance = load_balance()
                 balance -= bet
                 balance += win_amount
                 save_balance(balance)
-                
                 update_stats(dogon_number, "win")
-                
                 original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
                 if dogon_number == 0:
                     result_text = f"\n\n✅ <b>ЗАШЛО</b> у дилера в целевой игре: #N{game_to_check}"
                 else:
                     result_text = f"\n\n✅ <b>ЗАШЛО</b> у дилера на догоне {dogon_number}: #N{game_to_check}"
                 result_text += f"\n💰 Ставка: {bet:.2f}₽ | Выигрыш: {win_amount:.2f}₽ | Баланс: {balance:.2f}₽"
-                
                 edit_message(message_id, original_text + result_text)
                 entry["status"] = "win"
                 entry["result_game"] = game_to_check
@@ -520,17 +493,23 @@ def check_results(history, all_messages):
                 save_history(history)
                 print(f"✅ Прогноз #N{from_game} → #N{target} ЗАШЕЛ у дилера на игре #N{game_to_check}", flush=True)
                 return
-            
+
+            # Если масть не найдена, но это ещё не последняя игра, переходим к следующей
+            if i < max_games_to_check - 1:
+                print(f"⏩ Масть не найдена в #N{game_to_check}, переходим к следующему догону", flush=True)
+                entry["current_dogon"] = i + 1
+                entry["time"] = datetime.now(MOSCOW_TZ).isoformat()
+                save_history(history)
+                continue
+
+            # Если дошли до последней игры и масти нет — проигрыш
             if i == max_games_to_check - 1:
                 print(f"❌ Масть {predicted_suit} НЕ НАЙДЕНА у дилера за {max_games_to_check} игр", flush=True)
-                
                 balance = load_balance()
-                bet = get_bet(3)
+                bet = get_bet(i)
                 balance -= bet
                 save_balance(balance)
-                
-                update_stats(0, "lose")
-                
+                update_stats(i, "lose")
                 original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
                 result_text = f"\n\n❌ <b>НЕ ЗАШЛО</b> у дилера (проверено {max_games_to_check} игр)\n💰 -{bet:.2f}₽ | Баланс: {balance:.2f}₽"
                 edit_message(message_id, original_text + result_text)
@@ -767,7 +746,8 @@ def main():
                             "card": prognoz["card"],
                             "time": datetime.now(MOSCOW_TZ).isoformat(),
                             "status": "pending",
-                            "message_id": message_id
+                            "message_id": message_id,
+                            "current_dogon": 0
                         })
                         save_history(history)
 
