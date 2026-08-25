@@ -47,10 +47,12 @@ PROCESSED_GAMES = set()
 LAST_PREDICT_TIME = 0
 PREDICT_INTERVAL = 3
 CLEANUP_INTERVAL = 3600
-TIMEOUT_SECONDS = 1800  # 30 минут
+TIMEOUT_SECONDS = 300  # 5 минут
+MAX_GAME_GAP = 15      # если разница номеров больше 15, сбрасываем
 
+# ТОЛЬКО 6, 7, 8, 9 (10 УБРАНА)
 POSITION_SUITS = {1: "♣️", 2: "♦️", 3: "♥️", 4: "♠️"}
-DIGIT_VALUES = {'6': 6, '7': 7, '8': 8, '9': 9, '10': 10}
+DIGIT_VALUES = {'6': 6, '7': 7, '8': 8, '9': 9}
 
 # =====================================================================
 # СТАТИСТИКА
@@ -143,7 +145,7 @@ def edit_message(message_id, text):
         return False
 
 def send_startup_message():
-    msg = "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО\n📦 Версия: 2.2.0\n✅ Переменные установлены\n🤖 Бот активен 💪"
+    msg = "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО\n📦 Версия: 2.4.0\n✅ Переменные установлены\n🤖 Бот активен 💪"
     send_message(msg)
 
 # =====================================================================
@@ -190,8 +192,9 @@ def parse_game(text):
                     continue
                 rank = ''
                 if i + 1 < len(cards_str) and cards_str[i:i+2] == '10':
-                    rank = '10'
+                    # 10 игнорируем, не добавляем в список
                     i += 2
+                    continue
                 elif cards_str[i] in 'AKQJ':
                     rank = cards_str[i]
                     i += 1
@@ -294,7 +297,7 @@ def is_valid_game(game_data):
                 has_digit = True
                 break
         if not has_digit:
-            print(f"⏭️ Пропускаем #N{game_data['number']}: нет цифр (6-10) у игрока", flush=True)
+            print(f"⏭️ Пропускаем #N{game_data['number']}: нет цифр (6-9) у игрока", flush=True)
             return False
         return True
     return False
@@ -320,7 +323,7 @@ def predict(game_data):
             has_digit = True
             break
     if not has_digit:
-        print(f"⏭️ Пропускаем #N{game_num}: нет цифр (6-10) в 4 картах", flush=True)
+        print(f"⏭️ Пропускаем #N{game_num}: нет цифр (6-9) в 4 картах", flush=True)
         return None
     digit_ranks = []
     for card in four_cards:
@@ -355,7 +358,7 @@ def predict(game_data):
     }
 
 # =====================================================================
-# ПРОВЕРКА РЕЗУЛЬТАТОВ (ПО КАРТАМ ДИЛЕРА) - ИСПРАВЛЕНО
+# ПРОВЕРКА РЕЗУЛЬТАТОВ (ПО ДИЛЕРУ, С ТАЙМАУТОМ И ЗАЩИТОЙ ОТ УСТАРЕВАНИЯ)
 # =====================================================================
 def check_results(history, all_messages):
     for entry in history:
@@ -369,7 +372,7 @@ def check_results(history, all_messages):
         if not predicted_suit or not message_id:
             continue
 
-        # === ТАЙМАУТ 30 МИНУТ ===
+        # === ТАЙМАУТ 5 МИНУТ ===
         try:
             created_dt = datetime.fromisoformat(created_time)
             time_diff = (datetime.now(MOSCOW_TZ) - created_dt).total_seconds()
@@ -378,13 +381,31 @@ def check_results(history, all_messages):
         if time_diff > TIMEOUT_SECONDS:
             print(f"⏰ Таймаут! Прогноз #N{from_game} → #N{target} висит {int(time_diff // 60)} мин", flush=True)
             update_stats(0, "lose")
-            original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
+            original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
             result_text = f"\n\n⏰ <b>ТАЙМАУТ</b> (не дождались завершения)"
             edit_message(message_id, original_text + result_text)
             entry["status"] = "lose"
             save_history(history)
             print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ (таймаут)", flush=True)
             continue
+
+        # === ПРОВЕРКА НА УСТАРЕВАНИЕ НОМЕРА ===
+        if all_messages:
+            max_game = 0
+            for msg in all_messages:
+                match = re.search(r'#N(\d+)', msg)
+                if match:
+                    max_game = max(max_game, int(match.group(1)))
+            if max_game - target > MAX_GAME_GAP:
+                print(f"⏰ Игра #N{target} сильно устарела (текущая ~#N{max_game})", flush=True)
+                update_stats(0, "lose")
+                original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
+                result_text = f"\n\n❌ <b>НЕ ЗАШЛО</b> (игра устарела)"
+                edit_message(message_id, original_text + result_text)
+                entry["status"] = "lose"
+                save_history(history)
+                print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ (устарел)", flush=True)
+                continue
 
         # === ОСНОВНАЯ ПРОВЕРКА (ПО ДИЛЕРУ) ===
         max_games_to_check = 4
@@ -649,7 +670,7 @@ def main():
                 if prognoz:
                     msg = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n"
                     msg += f"📊 От игры: #N{game_data['number']}\n"
-                    msg += f"🃏 Масть Дилера: {prognoz['suit']}\n"
+                    msg += f"🃏 Масть: {prognoz['suit']}\n"
                     msg += f"🎯 Целевая игра: #N{prognoz['target']}\n"
                     msg += f"📈 3 игры догон\n"
                     msg += f"⏰ {datetime.now(MOSCOW_TZ).strftime('%H:%M:%S')}"
