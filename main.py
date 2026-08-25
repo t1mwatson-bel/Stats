@@ -143,7 +143,7 @@ def edit_message(message_id, text):
         return False
 
 def send_startup_message():
-    msg = "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО\n📦 Версия: 2.1.0\n✅ Переменные установлены\n🤖 Бот активен 💪"
+    msg = "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО\n📦 Версия: 2.2.0\n✅ Переменные установлены\n🤖 Бот активен 💪"
     send_message(msg)
 
 # =====================================================================
@@ -343,7 +343,7 @@ def predict(game_data):
         return None
     rank = highest_card["rank"]
     target_game = game_num + 1
-    print(f"🔍 #N{game_num}: старшая цифра {rank} (поз. {highest_position}) → {predicted_suit}", flush=True)
+    print(f"🔍 #N{game_num}: старшая цифра {rank} (поз. {highest_position}) → {predicted_suit} (прогноз на дилера)", flush=True)
     return {
         "from_game": game_num,
         "target": target_game,
@@ -355,7 +355,7 @@ def predict(game_data):
     }
 
 # =====================================================================
-# ПРОВЕРКА РЕЗУЛЬТАТОВ (С ТАЙМАУТОМ 30 МИНУТ)
+# ПРОВЕРКА РЕЗУЛЬТАТОВ (ПО КАРТАМ ДИЛЕРА)
 # =====================================================================
 def check_results(history, all_messages):
     for entry in history:
@@ -386,7 +386,7 @@ def check_results(history, all_messages):
             print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ (таймаут)", flush=True)
             continue
 
-        # === ОСНОВНАЯ ПРОВЕРКА ===
+        # === ОСНОВНАЯ ПРОВЕРКА (ПО ДИЛЕРУ) ===
         max_games_to_check = 4
         for i in range(max_games_to_check):
             game_to_check = target + i
@@ -396,49 +396,51 @@ def check_results(history, all_messages):
                     game_msg = msg
                     break
             if not game_msg:
-                print(f"⏳ Ждем завершенную игру #N{game_to_check} для проверки масти {predicted_suit}", flush=True)
+                print(f"⏳ Ждем завершенную игру #N{game_to_check} для проверки масти {predicted_suit} у дилера", flush=True)
                 break
             game_data = parse_game(game_msg)
             if not game_data:
                 print(f"⚠️ Не удалось распарсить #N{game_to_check}", flush=True)
                 continue
+
+            # === ПРОВЕРКА МАСТИ У ДИЛЕРА ===
             suit_found = False
-            player_cards = game_data.get("player_cards", [])
-            if not player_cards:
-                print(f"⚠️ Нет карт игрока в #N{game_to_check}", flush=True)
+            dealer_cards = game_data.get("dealer_cards", [])
+            if not dealer_cards:
+                print(f"⚠️ Нет карт дилера в #N{game_to_check}", flush=True)
                 continue
-            print(f"   Проверка #N{game_to_check}: {len(player_cards)} карт игрока", flush=True)
-            for card in player_cards:
+            print(f"   Проверка #N{game_to_check}: {len(dealer_cards)} карт дилера", flush=True)
+            for card in dealer_cards:
                 print(f"      Карта: {card['rank']}{card['suit']}", flush=True)
                 if card.get("suit") == predicted_suit:
                     suit_found = True
-                    print(f"   ✅ Найдена масть {predicted_suit} у игрока в карте {card['rank']}{card['suit']}", flush=True)
+                    print(f"   ✅ Найдена масть {predicted_suit} у дилера в карте {card['rank']}{card['suit']}", flush=True)
                     break
             if suit_found:
-                print(f"🎯 МАСТЬ {predicted_suit} НАЙДЕНА в игре #N{game_to_check}!", flush=True)
+                print(f"🎯 МАСТЬ {predicted_suit} НАЙДЕНА у дилера в игре #N{game_to_check}!", flush=True)
                 dogon_number = i
                 update_stats(dogon_number, "win")
-                original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
+                original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
                 if dogon_number == 0:
-                    result_text = f"\n\n✅ <b>ЗАШЛО</b> в целевой игре: #N{game_to_check}"
+                    result_text = f"\n\n✅ <b>ЗАШЛО</b> у дилера в целевой игре: #N{game_to_check}"
                 else:
-                    result_text = f"\n\n✅ <b>ЗАШЛО</b> на догоне {dogon_number}: #N{game_to_check}"
+                    result_text = f"\n\n✅ <b>ЗАШЛО</b> у дилера на догоне {dogon_number}: #N{game_to_check}"
                 edit_message(message_id, original_text + result_text)
                 entry["status"] = "win"
                 entry["result_game"] = game_to_check
                 entry["dogon"] = dogon_number
                 save_history(history)
-                print(f"✅ Прогноз #N{from_game} → #N{target} ЗАШЕЛ на игре #N{game_to_check}", flush=True)
+                print(f"✅ Прогноз #N{from_game} → #N{target} ЗАШЕЛ у дилера на игре #N{game_to_check}", flush=True)
                 return
             if i == max_games_to_check - 1:
-                print(f"❌ Масть {predicted_suit} НЕ НАЙДЕНА за {max_games_to_check} игр", flush=True)
+                print(f"❌ Масть {predicted_suit} НЕ НАЙДЕНА у дилера за {max_games_to_check} игр", flush=True)
                 update_stats(0, "lose")
-                original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
-                result_text = f"\n\n❌ <b>НЕ ЗАШЛО</b> (проверено {max_games_to_check} игр)"
+                original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
+                result_text = f"\n\n❌ <b>НЕ ЗАШЛО</b> у дилера (проверено {max_games_to_check} игр)"
                 edit_message(message_id, original_text + result_text)
                 entry["status"] = "lose"
                 save_history(history)
-                print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ", flush=True)
+                print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ у дилера", flush=True)
                 return
 
 # =====================================================================
@@ -645,7 +647,7 @@ def main():
 
                 prognoz = predict(game_data)
                 if prognoz:
-                    msg = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n"
+                    msg = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n"
                     msg += f"📊 От игры: #N{game_data['number']}\n"
                     msg += f"🃏 Масть: {prognoz['suit']}\n"
                     msg += f"🎯 Целевая игра: #N{prognoz['target']}\n"
@@ -654,7 +656,7 @@ def main():
 
                     message_id = send_message(msg)
                     if message_id:
-                        print(f"✅ ПРОГНОЗ ОТПРАВЛЕН: #N{prognoz['target']} → масть {prognoz['suit']}", flush=True)
+                        print(f"✅ ПРОГНОЗ ОТПРАВЛЕН: #N{prognoz['target']} → масть {prognoz['suit']} (на дилера)", flush=True)
                         LAST_PREDICT_TIME = current_time
                         PROCESSED_GAMES.add(game_number)
 
