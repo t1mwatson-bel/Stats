@@ -7,9 +7,15 @@ import time
 from datetime import datetime
 import pytz
 
+# =====================================================================
+# ЧАСОВОЙ ПОЯС (МОСКВА)
+# =====================================================================
 MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 sys.stdout.flush()
 
+# =====================================================================
+# ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
+# =====================================================================
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 if not BOT_TOKEN:
     BOT_TOKEN = os.getenv('BOT_TOKEN_PROGNOZ')
@@ -30,6 +36,9 @@ if not BOT_TOKEN or not CHANNEL_STATS or not CHANNEL_PROGNOZ:
 print("✅ Все переменные успешно загружены!", flush=True)
 print("", flush=True)
 
+# =====================================================================
+# НАСТРОЙКИ
+# =====================================================================
 HISTORY_FILE = "history_digits.json"
 OFFSET_FILE = "offset_digits.txt"
 STATS_FILE = "stats_digits.json"
@@ -38,10 +47,14 @@ PROCESSED_GAMES = set()
 LAST_PREDICT_TIME = 0
 PREDICT_INTERVAL = 3
 CLEANUP_INTERVAL = 3600
+TIMEOUT_SECONDS = 1800  # 30 минут
 
 POSITION_SUITS = {1: "♣️", 2: "♦️", 3: "♥️", 4: "♠️"}
 DIGIT_VALUES = {'6': 6, '7': 7, '8': 8, '9': 9, '10': 10}
 
+# =====================================================================
+# СТАТИСТИКА
+# =====================================================================
 def load_stats():
     if os.path.exists(STATS_FILE):
         try:
@@ -88,6 +101,9 @@ def send_stats_report():
     msg += f"{'=' * 30}\n⏰ {datetime.now(MOSCOW_TZ).strftime('%d.%m.%Y %H:%M:%S')}"
     send_message(msg)
 
+# =====================================================================
+# ФУНКЦИИ ТЕЛЕГРАМ
+# =====================================================================
 def get_updates(offset):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
     params = {"offset": offset, "timeout": 30}
@@ -130,6 +146,9 @@ def send_startup_message():
     msg = "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО\n📦 Версия: 2.1.0\n✅ Переменные установлены\n🤖 Бот активен 💪"
     send_message(msg)
 
+# =====================================================================
+# ПАРСИНГ
+# =====================================================================
 def parse_game(text):
     try:
         game_match = re.search(r'#N(\d+)', text)
@@ -335,6 +354,9 @@ def predict(game_data):
         "games": [target_game, target_game + 1, target_game + 2, target_game + 3]
     }
 
+# =====================================================================
+# ПРОВЕРКА РЕЗУЛЬТАТОВ (С ТАЙМАУТОМ 30 МИНУТ)
+# =====================================================================
 def check_results(history, all_messages):
     for entry in history:
         if entry.get("status") != "pending":
@@ -343,8 +365,28 @@ def check_results(history, all_messages):
         predicted_suit = entry.get("suit")
         from_game = entry.get("from_game")
         message_id = entry.get("message_id")
+        created_time = entry.get("time", "")
         if not predicted_suit or not message_id:
             continue
+
+        # === ТАЙМАУТ 30 МИНУТ ===
+        try:
+            created_dt = datetime.fromisoformat(created_time)
+            time_diff = (datetime.now(MOSCOW_TZ) - created_dt).total_seconds()
+        except:
+            time_diff = 0
+        if time_diff > TIMEOUT_SECONDS:
+            print(f"⏰ Таймаут! Прогноз #N{from_game} → #N{target} висит {int(time_diff // 60)} мин", flush=True)
+            update_stats(0, "lose")
+            original_text = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ)</b>\n📊 От игры: #N{from_game}\n🃏 Масть: {predicted_suit}\n🎯 Целевая игра: #N{target}\n📈 3 игры догон\n⏰ {entry.get('time', '')[:16]}"
+            result_text = f"\n\n⏰ <b>ТАЙМАУТ</b> (не дождались завершения)"
+            edit_message(message_id, original_text + result_text)
+            entry["status"] = "lose"
+            save_history(history)
+            print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ (таймаут)", flush=True)
+            continue
+
+        # === ОСНОВНАЯ ПРОВЕРКА ===
         max_games_to_check = 4
         for i in range(max_games_to_check):
             game_to_check = target + i
@@ -399,6 +441,9 @@ def check_results(history, all_messages):
                 print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ", flush=True)
                 return
 
+# =====================================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# =====================================================================
 def save_history(history):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=2, ensure_ascii=False)
@@ -470,6 +515,9 @@ def check_bot_status():
         print(f"❌ Ошибка проверки бота: {e}", flush=True)
     print("", flush=True)
 
+# =====================================================================
+# ОСНОВНОЙ ЦИКЛ
+# =====================================================================
 def main():
     global LAST_PREDICT_TIME
     print("🔄 ЗАПУСК ПРОГНОЗИСТА...", flush=True)
@@ -480,16 +528,22 @@ def main():
         print("✅ Приветственное сообщение отправлено в Telegram", flush=True)
     except Exception as e:
         print(f"⚠️ Не удалось отправить приветствие: {e}", flush=True)
+
     offset = get_offset()
     history = load_history()
     last_reset_date = datetime.now(MOSCOW_TZ).date()
+
     print("📥 Загрузка последних сообщений из канала...", flush=True)
     all_messages = load_recent_messages()
     print(f"📥 Загружено сообщений: {len(all_messages)}", flush=True)
     print("", flush=True)
+
     check_results(history, all_messages)
+
     last_cleanup_time = time.time()
     last_stats_time = time.time()
+    last_forced_check = time.time()
+
     print("🚀 БОТ ГОТОВ К РАБОТЕ!", flush=True)
     print("=" * 60, flush=True)
     print("", flush=True)
@@ -517,6 +571,12 @@ def main():
                 send_stats_report()
                 last_stats_time = current_time
 
+            # ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА КАЖДЫЕ 30 СЕКУНД
+            if current_time - last_forced_check > 30:
+                print("🔄 Принудительная проверка ожидающих прогнозов...", flush=True)
+                check_results(history, all_messages)
+                last_forced_check = current_time
+
             updates = get_updates(offset)
 
             for update in updates.get("result", []):
@@ -542,6 +602,8 @@ def main():
                     continue
                 game_number = int(game_id_match.group(1))
 
+                # ЗАМЕНЯЕМ СТАРУЮ ВЕРСИЮ ИГРЫ НА НОВУЮ
+                all_messages = [msg for msg in all_messages if f"#N{game_number}" not in msg]
                 all_messages.append(text)
                 if len(all_messages) > 500:
                     all_messages = all_messages[-500:]
@@ -549,16 +611,16 @@ def main():
                 print(f"📥 Получена игра #N{game_number}", flush=True)
                 print(f"📝 Текст: {text}", flush=True)
 
-                # ЕСЛИ ИГРА ЗАВЕРШЕНА - ТОЛЬКО ПРОВЕРКА РЕЗУЛЬТАТА
+                # ЕСЛИ ИГРА ЗАВЕРШЕНА - ПРОВЕРЯЕМ РЕЗУЛЬТАТ
                 if '✅' in text or '🔰' in text:
                     print(f"✅ #N{game_number} завершена - проверяем результаты", flush=True)
                     check_results(history, all_messages)
                     continue
 
-                # НЕЗАВЕРШЕННАЯ ИГРА - ПРОВЕРЯЕМ ВОЗМОЖНОСТЬ СОЗДАНИЯ ПРОГНОЗА
+                # НЕЗАВЕРШЕННАЯ ИГРА - ПРОВЕРКА НА СОЗДАНИЕ ПРОГНОЗА
                 print(f"⏭️ #N{game_number} не завершена (нет ✅ или 🔰)", flush=True)
 
-                # НЕ ДАЁМ НОВЫЙ ПРОГНОЗ, ПОКА НЕ ЗАЙДЁТ ТЕКУЩИЙ
+                # НЕ ДАЁМ НОВЫЙ ПРОГНОЗ, ПОКА ЕСТЬ PENDING
                 pending_exists = any(h.get('status') == 'pending' for h in history)
                 if pending_exists:
                     print(f"⏳ Есть ожидающий прогноз, новый не даём", flush=True)
