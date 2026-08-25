@@ -355,7 +355,7 @@ def predict(game_data):
     }
 
 # =====================================================================
-# ПРОВЕРКА РЕЗУЛЬТАТОВ (ПО КАРТАМ ДИЛЕРА)
+# ПРОВЕРКА РЕЗУЛЬТАТОВ (ПО КАРТАМ ДИЛЕРА) - ИСПРАВЛЕНО
 # =====================================================================
 def check_results(history, all_messages):
     for entry in history:
@@ -649,7 +649,7 @@ def main():
                 if prognoz:
                     msg = f"🔮 <b>ПРОГНОЗ (ЦИФРЫ) - ДИЛЕР</b>\n"
                     msg += f"📊 От игры: #N{game_data['number']}\n"
-                    msg += f"🃏 Масть: {prognoz['suit']}\n"
+                    msg += f"🃏 Масть Дилера: {prognoz['suit']}\n"
                     msg += f"🎯 Целевая игра: #N{prognoz['target']}\n"
                     msg += f"📈 3 игры догон\n"
                     msg += f"⏰ {datetime.now(MOSCOW_TZ).strftime('%H:%M:%S')}"
