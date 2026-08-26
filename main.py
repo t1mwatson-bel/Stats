@@ -141,8 +141,8 @@ def send_startup_message():
     now = datetime.now(MOSCOW_TZ)
     msg = f"🚀 <b>БОТ ПРОГНОЗИСТ (РАНГ) ЗАПУЩЕН</b>\n"
     msg += f"⏰ Время: {now.strftime('%d.%m.%Y %H:%M:%S')} (МСК)\n"
-    msg += f"📌 Режим: Прогноз по задержке → ранг\n"
-    msg += f"🔄 Версия: 6.0"
+    msg += f"📌 Режим: Прогноз по задержке → ранг (2 варианта)\n"
+    msg += f"🔄 Версия: 6.1"
     send_message(msg)
     print(f"📤 Приветствие отправлено в канал", flush=True)
 
@@ -289,20 +289,20 @@ def get_game_number():
     return game_number
 
 # =====================================================================
-# ПРОГНОЗ ПО РАНГУ
+# ПРОГНОЗ ПО РАНГУ (ДВА ВАРИАНТА)
 # =====================================================================
-def predict_rank_by_latency(latency):
-    """Возвращает прогноз ранга по задержке"""
+def predict_ranks_by_latency(latency):
+    """Возвращает два ранга по задержке"""
     if 93 <= latency < 96:
-        return "8"   # или "9"
+        return ["8", "9"]
     elif 96 <= latency < 99:
-        return "7"   # или "10"
+        return ["7", "10"]
     elif 99 <= latency < 102:
-        return "J"   # или "Q"
+        return ["J", "Q"]
     elif 102 <= latency < 105:
-        return "9"   # или "10"
+        return ["9", "10"]
     elif latency >= 105:
-        return "K"   # или "7"
+        return ["7", "K"]
     else:
         return None
 
@@ -359,7 +359,7 @@ def clean_memory(history):
     return history
 
 # =====================================================================
-# ПРОВЕРКА РЕЗУЛЬТАТА (РАНГ)
+# ПРОВЕРКА РЕЗУЛЬТАТА (РАНГ — ДВА ВАРИАНТА)
 # =====================================================================
 def check_results(history, all_messages):
     global stats
@@ -370,12 +370,12 @@ def check_results(history, all_messages):
             continue
         
         target = entry.get("target")
-        predicted_rank = entry.get("rank")
+        predicted_ranks = entry.get("ranks", [])
         from_game = entry.get("from_game")
         message_id = entry.get("message_id")
         created_time = entry.get("time", "")
         
-        if not predicted_rank or not message_id:
+        if not predicted_ranks or not message_id:
             continue
         
         # === ТАЙМАУТ 10 МИНУТ ===
@@ -385,12 +385,12 @@ def check_results(history, all_messages):
             created_ts = 0
         
         if current_time - created_ts > TIMEOUT_SECONDS:
-            print(f"⏰ Таймаут! Прогноз #N{from_game} → #N{target} (ранг {predicted_rank})", flush=True)
+            print(f"⏰ Таймаут! Прогноз #N{from_game} → #N{target} (ранги {predicted_ranks})", flush=True)
             update_stats(0, "lose")
             
             original_text = f"🔮 <b>ПРОГНОЗ (РАНГ)</b>\n"
             original_text += f"📊 От игры: #N{from_game}\n"
-            original_text += f"🎯 Ранг: {predicted_rank}\n"
+            original_text += f"🎯 Ранги: {' или '.join(predicted_ranks)}\n"
             original_text += f"🎯 Целевая игра: #N{target}\n"
             original_text += f"📈 3 игры догон\n"
             original_text += f"⏰ {entry.get('time', '')[:16]}"
@@ -413,7 +413,7 @@ def check_results(history, all_messages):
                     break
             
             if not game_msg:
-                print(f"⏳ Ждем игру #N{game_to_check} для проверки ранга {predicted_rank}", flush=True)
+                print(f"⏳ Ждем игру #N{game_to_check} для проверки рангов {predicted_ranks}", flush=True)
                 break
             
             game_data = parse_game_from_text(game_msg)
@@ -421,7 +421,7 @@ def check_results(history, all_messages):
                 print(f"⚠️ Не удалось распарсить #N{game_to_check}", flush=True)
                 continue
             
-            # Проверяем ранг у игрока
+            # Проверяем ранги у игрока
             rank_found = False
             ranks = game_data.get("ranks", [])
             
@@ -430,18 +430,22 @@ def check_results(history, all_messages):
                 continue
             
             print(f"   Проверка #N{game_to_check}: {ranks}", flush=True)
-            if predicted_rank in ranks:
-                rank_found = True
-                print(f"   ✅ Найден ранг {predicted_rank} у игрока", flush=True)
+            
+            # Проверяем, совпадает ли хоть один из предсказанных рангов
+            for pr in predicted_ranks:
+                if pr in ranks:
+                    rank_found = True
+                    print(f"   ✅ Найден ранг {pr} у игрока", flush=True)
+                    break
             
             if rank_found:
-                print(f"🎯 РАНГ {predicted_rank} НАЙДЕН в игре #N{game_to_check}!", flush=True)
+                print(f"🎯 РАНГ {predicted_ranks} НАЙДЕН в игре #N{game_to_check}!", flush=True)
                 dogon_number = i
                 update_stats(dogon_number, "win")
                 
                 original_text = f"🔮 <b>ПРОГНОЗ (РАНГ)</b>\n"
                 original_text += f"📊 От игры: #N{from_game}\n"
-                original_text += f"🎯 Ранг: {predicted_rank}\n"
+                original_text += f"🎯 Ранги: {' или '.join(predicted_ranks)}\n"
                 original_text += f"🎯 Целевая игра: #N{target}\n"
                 original_text += f"📈 3 игры догон\n"
                 original_text += f"⏰ {entry.get('time', '')[:16]}"
@@ -457,16 +461,16 @@ def check_results(history, all_messages):
                 entry["dogon"] = dogon_number
                 save_history(history)
                 
-                print(f"✅ Прогноз #N{from_game} → #N{target} ЗАШЕЛ (ранг {predicted_rank}) на игре #N{game_to_check}", flush=True)
+                print(f"✅ Прогноз #N{from_game} → #N{target} ЗАШЕЛ (ранги {predicted_ranks}) на игре #N{game_to_check}", flush=True)
                 return
             
             if i == max_games_to_check - 1:
-                print(f"❌ Ранг {predicted_rank} НЕ НАЙДЕН за {max_games_to_check} игр", flush=True)
+                print(f"❌ Ранги {predicted_ranks} НЕ НАЙДЕНЫ за {max_games_to_check} игр", flush=True)
                 update_stats(0, "lose")
                 
                 original_text = f"🔮 <b>ПРОГНОЗ (РАНГ)</b>\n"
                 original_text += f"📊 От игры: #N{from_game}\n"
-                original_text += f"🎯 Ранг: {predicted_rank}\n"
+                original_text += f"🎯 Ранги: {' или '.join(predicted_ranks)}\n"
                 original_text += f"🎯 Целевая игра: #N{target}\n"
                 original_text += f"📈 3 игры догон\n"
                 original_text += f"⏰ {entry.get('time', '')[:16]}"
@@ -476,7 +480,7 @@ def check_results(history, all_messages):
                 entry["status"] = "lose"
                 save_history(history)
                 
-                print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ (ранг {predicted_rank})", flush=True)
+                print(f"❌ Прогноз #N{from_game} → #N{target} НЕ ЗАШЕЛ (ранги {predicted_ranks})", flush=True)
                 return
 
 # =====================================================================
@@ -591,8 +595,8 @@ def main():
                 if latency is None:
                     continue
                 
-                predicted_rank = predict_rank_by_latency(latency)
-                if predicted_rank is None:
+                predicted_ranks = predict_ranks_by_latency(latency)
+                if predicted_ranks is None:
                     print(f"⏭️ Задержка {latency:.2f} мс — нет прогноза", flush=True)
                     continue
                 
@@ -602,21 +606,21 @@ def main():
                 
                 msg = f"🔮 <b>ПРОГНОЗ (РАНГ)</b>\n"
                 msg += f"📊 От игры: #N{current_game_num}\n"
-                msg += f"🎯 Ранг: {predicted_rank}\n"
+                msg += f"🎯 Ранги: {' или '.join(predicted_ranks)}\n"
                 msg += f"🎯 Целевая игра: #N{target_game}\n"
                 msg += f"📈 3 игры догон\n"
                 msg += f"⏰ {datetime.now(MOSCOW_TZ).strftime('%H:%M:%S')}"
                 
                 message_id = send_message(msg)
                 if message_id:
-                    print(f"✅ ПРОГНОЗ ОТПРАВЛЕН: #N{target_game} → ранг {predicted_rank}", flush=True)
+                    print(f"✅ ПРОГНОЗ ОТПРАВЛЕН: #N{target_game} → ранги {predicted_ranks}", flush=True)
                     LAST_PREDICT_TIME = current_time
                     PROCESSED_GAMES.add(game_number)
                     
                     history.append({
                         "from_game": current_game_num,
                         "target": target_game,
-                        "rank": predicted_rank,
+                        "ranks": predicted_ranks,
                         "time": datetime.now(MOSCOW_TZ).isoformat(),
                         "status": "pending",
                         "message_id": message_id
