@@ -159,57 +159,31 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
     d_hand = format_cards(dealer_cards)
     total = p_score + d_score if dealer_cards else p_score
     
-    # ОПРЕДЕЛЯЕМ ПОБЕДИТЕЛЯ
-    def get_result():
-        if p_score > 21:
-            return "dealer_win"
-        if d_score > 21:
-            return "player_win"
-        if p_score == 21:
-            return "player_win"
-        if d_score == 21:
-            return "dealer_win"
-        if p_score > d_score:
-            return "player_win"
-        if d_score > p_score:
-            return "dealer_win"
-        return "tie"
-    
-    result = get_result()
-    
-    # ФОРМИРУЕМ СООБЩЕНИЕ ДЛЯ STATE 4 и 5
+    # =============================================================
+    # 1. СНАЧАЛА ОБРАБАТЫВАЕМ STATE 4 И 5 (ФИНАЛ)
+    # =============================================================
     if state in ["4", "5"]:
-        # Определяем теги (только для STATE 5)
-        tags = []
-        if state == "5":
-            # Тег #R — у обоих по 2 карты
-            if len(player_cards) == 2 and len(dealer_cards) == 2:
-                tags.append("#R")
-            
-            # Тег #G — два туза у игрока или дилера
-            player_aces = sum(1 for c in player_cards if c.get("CV") == 14)
-            dealer_aces = sum(1 for c in dealer_cards if c.get("CV") == 14)
-            if player_aces == 2 or dealer_aces == 2:
-                tags.append("#G")
-            
-            # Тег #O — 21 очко у кого-то
-            if p_score == 21 or d_score == 21:
-                tags.append("#O")
-            
-            # Тег #X — ничья (одинаковые очки)
-            if p_score == d_score:
-                tags.append("#X")
-        
-        tag_str = " " + " ".join(tags) if tags else ""
-        
-        # Формируем сообщение с ✅ или 🔰
-        if result == "player_win":
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
-        elif result == "dealer_win":
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
-        else:  # ничья
-            return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str}"
+        # Определяем победителя
+        if p_score > 21:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+        if d_score > 21:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+        if p_score == 21:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+        if d_score == 21:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+        if p_score > d_score:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+        if d_score > p_score:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+        # Ничья
+        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
     
+    # =============================================================
+    # 2. ПОТОМ ЛАЙВ (state 0-3)
+    # =============================================================
+    arrow = get_arrow(state)
+    return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
     # ЛАЙВ (state 0-3)
     arrow = get_arrow(state)
     return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
