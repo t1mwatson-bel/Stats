@@ -160,7 +160,7 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
     total = p_score + d_score if dealer_cards else p_score
     
     # =============================================================
-    # ФИНАЛ (state 4 И state 5) — ТУТ ГАЛОЧКА + ТЕГИ!
+    # ФИНАЛ (state 4 И state 5) — ГАЛОЧКА + ТЕГИ!
     # =============================================================
     if state in ["4", "5"]:
         # Определяем теги
@@ -203,11 +203,8 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
         return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str}"
     
     # =============================================================
-    # 2. ПОТОМ ЛАЙВ (state 0-3)
+    # ЛАЙВ (state 0-3) — СТРЕЛКА
     # =============================================================
-    arrow = get_arrow(state)
-    return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
-    # ЛАЙВ (state 0-3)
     arrow = get_arrow(state)
     return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
 
@@ -231,24 +228,16 @@ def edit_message(message_id, text):
         return False
 
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    """Проверяет, завершена ли игра по STATE"""
+    """Проверяет, завершена ли игра — ТОЛЬКО ПО STATE!"""
+    # state 5 — игра точно завершена
     if state == "5":
         return True
     
+    # state 4 — дилер закончил, завершаем
     if state == "4":
-        if dealer_cards and d_score > 21:
-            return True
-        if player_cards and p_score == 21:
-            if dealer_cards and d_score < 21:
-                return True
-        return False
-    
-    if len(player_cards) >= 5:
         return True
     
-    if len(dealer_cards) >= 5:
-        return True
-    
+    # НИКАКИХ ДРУГИХ УСЛОВИЙ!
     return False
 
 # =====================================================================
