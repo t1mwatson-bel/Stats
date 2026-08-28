@@ -160,24 +160,47 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
     total = p_score + d_score if dealer_cards else p_score
     
     # =============================================================
-    # 1. СНАЧАЛА ОБРАБАТЫВАЕМ STATE 4 И 5 (ФИНАЛ)
+    # ФИНАЛ (state 4 И state 5) — ТУТ ГАЛОЧКА + ТЕГИ!
     # =============================================================
     if state in ["4", "5"]:
-        # Определяем победителя
+        # Определяем теги
+        tags = []
+        
+        # Тег #R — у обоих по 2 карты
+        if len(player_cards) == 2 and len(dealer_cards) == 2:
+            tags.append("#R")
+        
+        # Тег #G — два туза у игрока или дилера
+        player_aces = sum(1 for c in player_cards if c.get("CV") == 14)
+        dealer_aces = sum(1 for c in dealer_cards if c.get("CV") == 14)
+        if player_aces == 2 or dealer_aces == 2:
+            tags.append("#G")
+        
+        # Тег #O — 21 очко у кого-то
+        if p_score == 21 or d_score == 21:
+            tags.append("#O")
+        
+        # Тег #X — ничья (одинаковые очки)
+        if p_score == d_score:
+            tags.append("#X")
+        
+        tag_str = " " + " ".join(tags) if tags else ""
+        
+        # Формируем сообщение с ✅ или 🔰
         if p_score > 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
         if d_score > 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
         if p_score == 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
         if d_score == 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
         if p_score > d_score:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}"
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
         if d_score > p_score:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}"
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
         # Ничья
-        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}"
+        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str}"
     
     # =============================================================
     # 2. ПОТОМ ЛАЙВ (state 0-3)
