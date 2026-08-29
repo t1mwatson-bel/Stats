@@ -111,9 +111,6 @@ def format_cards(cards):
         result.append(f"{rank}{suit}")
     return "".join(result)
 
-# =============================================================
-# ⭐ ПРАВИЛЬНЫЙ ПОДСЧЕТ ТУЗОВ
-# =============================================================
 def calculate_score(cards):
     if not cards:
         return 0
@@ -121,7 +118,6 @@ def calculate_score(cards):
     score = 0
     aces = 0
     
-    # Считаем все карты, тузы как 11
     for c in cards:
         cv = c.get("CV", 0)
         if cv == 14:  # Туз
@@ -136,7 +132,7 @@ def calculate_score(cards):
         elif 6 <= cv <= 10:
             score += cv
     
-    # ОСОБЫЙ СЛУЧАЙ: два туза = 21
+    # Особый случай: два туза = 21
     if aces == 2:
         return 21
     
@@ -148,49 +144,50 @@ def calculate_score(cards):
     return score
 
 def get_arrow(state):
-    """Определяет стрелку на основе STATE"""
     if state == "1":
-        return "◀️"   # Игрок берёт
+        return "◀️"
     elif state == "2":
-        return "▶️"   # Дилер ходит
+        return "▶️"
     elif state == "3":
-        return "▶️"   # Дилер берёт
+        return "▶️"
     else:
-        return ""     # Никто не ходит
+        return ""
 
 def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state):
     p_hand = format_cards(player_cards)
     d_hand = format_cards(dealer_cards)
     total = p_score + d_score if dealer_cards else p_score
     
-    # =============================================================
-    # ФИНАЛ (state 4 И state 5) — ГАЛОЧКА + ТЕГИ!
-    # =============================================================
+    # Проверяем, завершена ли игра (для отображения галочек)
+    is_finished = False
     if state in ["4", "5"]:
-        # Определяем теги
+        is_finished = True
+    elif dealer_cards and d_score > 21:
+        is_finished = True
+    elif dealer_cards and d_score >= 17:
+        is_finished = True
+    elif len(player_cards) >= 5 or len(dealer_cards) >= 5:
+        is_finished = True
+    
+    if is_finished:
         tags = []
         
-        # Тег #R — у обоих по 2 карты
         if len(player_cards) == 2 and len(dealer_cards) == 2:
             tags.append("#R")
         
-        # Тег #G — два туза у игрока или дилера
         player_aces = sum(1 for c in player_cards if c.get("CV") == 14)
         dealer_aces = sum(1 for c in dealer_cards if c.get("CV") == 14)
         if player_aces == 2 or dealer_aces == 2:
             tags.append("#G")
         
-        # Тег #O — 21 очко у кого-то
         if p_score == 21 or d_score == 21:
             tags.append("#O")
         
-        # Тег #X — ничья (одинаковые очки)
         if p_score == d_score:
             tags.append("#X")
         
         tag_str = " " + " ".join(tags) if tags else ""
         
-        # Формируем сообщение с ✅ или 🔰
         if p_score > 21:
             return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
         if d_score > 21:
@@ -203,12 +200,8 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
             return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
         if d_score > p_score:
             return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
-        # Ничья
         return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str}"
     
-    # =============================================================
-    # ЛАЙВ (state 0-3) — СТРЕЛКА
-    # =============================================================
     arrow = get_arrow(state)
     return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
 
@@ -231,35 +224,33 @@ def edit_message(message_id, text):
         print(f"❌ Ошибка редактирования: {e}", flush=True)
         return False
 
+# =============================================================
+# ⭐ ГЛАВНОЕ ИСПРАВЛЕНИЕ - ЗАВЕРШАЕМ ПРИ ПЕРЕБОРЕ ДИЛЕРА
+# =============================================================
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    # ТОЛЬКО state 5 — игра точно завершена
-    if state == "5":
+    # state 4 или 5 - завершаем
+    if state in ["4", "5"]:
         return True
     
-    # state 4 — дилер закончил, завершаем
-    if state == "4":
+    # ⭐ Если у дилера перебор (>21) - завершаем (даже если state=3)
+    if dealer_cards and d_score > 21:
         return True
     
-    # state 2 — игрок закончил, дилер ходит
-    # НЕ ЗАВЕРШАЕМ НИ ПРИ КАКИХ УСЛОВИЯХ!
-    if state == "2":
-        return False
+    # Если у дилера 17+ очков - завершаем
+    if dealer_cards and d_score >= 17:
+        return True
     
-    # state 3 — дилер берёт, не завершаем
-    if state == "3":
-        return False
-    
-    # Если у игрока или дилера 5 карт — игра завершена
+    # Если у игрока или дилера 5 карт - завершаем
     if len(player_cards) >= 5 or len(dealer_cards) >= 5:
         return True
     
+    # Все остальное - игра продолжается
     return False
 
 # =====================================================================
-# МОНИТОРИНГ АКТИВНЫХ ИГР (КАЖДЫЕ 10 СЕКУНД)
+# МОНИТОРИНГ АКТИВНЫХ ИГР
 # =====================================================================
 def monitor_active_games():
-    """Мониторит активные игры и обновляет карты каждые 10 секунд"""
     global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history
     
     active_games = get_active_games()
@@ -276,7 +267,13 @@ def monitor_active_games():
         if not data:
             continue
         
-        sc = data.get("Value", {}).get("SC", {})
+        # ⭐ ЗАЩИТА ОТ ОШИБКИ NoneType
+        value_data = data.get("Value")
+        if value_data is None:
+            print(f"⚠️ Value is None для игры {game_id}", flush=True)
+            continue
+        
+        sc = value_data.get("SC", {})
         
         player_cards = []
         dealer_cards = []
@@ -295,9 +292,6 @@ def monitor_active_games():
                     dealer_cards = []
             if item.get("Key") == "STATE":
                 state = item.get("Value")
-                # =============================================================
-                # 🔍 ОТЛАДКА - ВЫВОДИМ STATE ДЛЯ КАЖДОЙ ИГРЫ
-                # =============================================================
                 print(f"🔍 Игра {game_id}: STATE={state} (тип: {type(state).__name__})", flush=True)
         
         if not player_cards:
@@ -307,7 +301,6 @@ def monitor_active_games():
             game_numbers[game_id] = get_game_number()
         game_number = game_numbers[game_id]
         
-        # Проверяем, изменились ли карты или state
         p1_str = json.dumps(player_cards)
         p2_str = json.dumps(dealer_cards)
         
@@ -353,6 +346,7 @@ def monitor_active_games():
                 messages[game_id] = msg_id
                 print(f"📤 Новая игра {game_id}: {msg}", flush=True)
         
+        # ⭐ Проверяем завершение
         if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
             processed_games.add(game_id)
             if game_id in messages:
@@ -365,7 +359,7 @@ def monitor_active_games():
                 del dealer_cards_history[game_id]
             if game_id in game_state_history:
                 del game_state_history[game_id]
-            print(f"🏁 Игра {game_id} завершена (state={state})", flush=True)
+            print(f"🏁 Игра {game_id} ЗАВЕРШЕНА (state={state}, d_score={d_score})", flush=True)
 
 # =====================================================================
 # ОСНОВНОЙ ЦИКЛ
@@ -377,6 +371,7 @@ def main():
     print(f"🕐 Игры каждую минуту, старт в 03:00", flush=True)
     print(f"📊 Всего игр в сутках: 1440", flush=True)
     print(f"⏱️ Мониторинг: каждые 10 секунд", flush=True)
+    print("🎯 ЗАВЕРШЕНИЕ: state=4/5 ИЛИ перебор дилера", flush=True)
     print("=" * 60, flush=True)
     
     last_monitor_time = time.time()
