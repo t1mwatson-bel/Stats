@@ -86,8 +86,8 @@ def format_cards(cards):
     return "".join(f"{RANKS.get(c.get('CV',0), str(c.get('CV',0)))}{SUITS_NAMES.get(c.get('CS',0), '?')}" for c in cards)
 
 # =============================================================
-# ИСПРАВЛЕННАЯ ФУНКЦИЯ calculate_score
-# ТУЗЫ ВСЕГДА 11, КРОМЕ СЛУЧАЯ КОГДА 2 ТУЗА В НАЧАЛЬНОЙ РУКЕ → 21
+# ФУНКЦИЯ calculate_score
+# ТУЗЫ ВСЕГДА 11, КРОМЕ ДВУХ ТУЗОВ В НАЧАЛЬНОЙ РУКЕ → 21
 # =============================================================
 def calculate_score(cards):
     if not cards:
@@ -96,57 +96,52 @@ def calculate_score(cards):
     aces = 0
     for c in cards:
         cv = c.get("CV", 0)
-        if cv == 14:          # Туз
+        if cv == 14:
             aces += 1
-            score += 11       # всегда прибавляем 11
-        elif cv == 13:        # Король
+            score += 11
+        elif cv == 13:
             score += 4
-        elif cv == 12:        # Дама
+        elif cv == 12:
             score += 3
-        elif cv == 11:        # Валет
+        elif cv == 11:
             score += 2
-        elif 6 <= cv <= 10:   # Числовые карты 6-10
+        elif 6 <= cv <= 10:
             score += cv
 
-    # Единственное исключение: ровно две карты и обе - тузы → 21 (а не 22)
+    # Два туза в начальной руке → 21
     if len(cards) == 2 and aces == 2:
         return 21
-
-    # Во всех остальных случаях тузы всегда дают 11, без понижения до 1
     return score
 
 # =============================================================
 # ИСПРАВЛЕННАЯ ФУНКЦИЯ is_game_finished
-# ДОБАВЛЕН BLACKJACK (10 + ТУЗ) И ДВА ТУЗА
+# ПРОВЕРКА BLACKJACK - САМАЯ ПЕРВАЯ!
 # =============================================================
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    # Игра завершена, если state == "5" (финал)
-    if state == "5":
-        return True
-    
-    # Если у игрока 21 с двух карт (Blackjack или два туза) - игра завершена
+    # ✅ ПРОВЕРКА BLACKJACK - САМАЯ ПЕРВАЯ!
+    # Если у игрока 21 с двух карт - игра завершена
     if len(player_cards) == 2 and p_score == 21:
         return True
     
-    # Если у дилера 21 с двух карт (Blackjack или два туза) - игра завершена
+    # Если у дилера 21 с двух карт - игра завершена
     if dealer_cards and len(dealer_cards) == 2 and d_score == 21:
         return True
     
-    # Если state == "4" и у дилера 20 или 21 - игра завершена (дилер не добирает)
+    # Дальше остальные проверки...
+    if state == "5":
+        return True
+    
     if state == "4":
         if dealer_cards and d_score in (20, 21):
             return True
         return False
     
-    # Если state == "2" или "3" - игра ещё идёт (ход игрока или дилера)
     if state in ("2", "3"):
         return False
     
-    # Если у дилера перебор - игра завершена
     if dealer_cards and d_score > 21:
         return True
     
-    # Если у игрока или дилера 5 и более карт - игра завершена
     if len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5):
         return True
     
