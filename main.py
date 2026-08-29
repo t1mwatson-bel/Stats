@@ -87,6 +87,7 @@ def format_cards(cards):
 
 # =============================================================
 # ИСПРАВЛЕННАЯ ФУНКЦИЯ calculate_score
+# ТУЗЫ ВСЕГДА 11, КРОМЕ СЛУЧАЯ КОГДА 2 ТУЗА В НАЧАЛЬНОЙ РУКЕ → 21
 # =============================================================
 def calculate_score(cards):
     if not cards:
@@ -113,6 +114,43 @@ def calculate_score(cards):
 
     # Во всех остальных случаях тузы всегда дают 11, без понижения до 1
     return score
+
+# =============================================================
+# ИСПРАВЛЕННАЯ ФУНКЦИЯ is_game_finished
+# ДОБАВЛЕН BLACKJACK (10 + ТУЗ) И ДВА ТУЗА
+# =============================================================
+def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
+    # Игра завершена, если state == "5" (финал)
+    if state == "5":
+        return True
+    
+    # Если у игрока 21 с двух карт (Blackjack или два туза) - игра завершена
+    if len(player_cards) == 2 and p_score == 21:
+        return True
+    
+    # Если у дилера 21 с двух карт (Blackjack или два туза) - игра завершена
+    if dealer_cards and len(dealer_cards) == 2 and d_score == 21:
+        return True
+    
+    # Если state == "4" и у дилера 20 или 21 - игра завершена (дилер не добирает)
+    if state == "4":
+        if dealer_cards and d_score in (20, 21):
+            return True
+        return False
+    
+    # Если state == "2" или "3" - игра ещё идёт (ход игрока или дилера)
+    if state in ("2", "3"):
+        return False
+    
+    # Если у дилера перебор - игра завершена
+    if dealer_cards and d_score > 21:
+        return True
+    
+    # Если у игрока или дилера 5 и более карт - игра завершена
+    if len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5):
+        return True
+    
+    return False
 
 def get_arrow(state):
     if state == "1":
@@ -172,21 +210,6 @@ def edit_message(message_id, text):
     except Exception as e:
         print(f"❌ Ошибка редактирования: {e}", flush=True)
         return False
-
-def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    if state == "5":
-        return True
-    if state == "4":
-        if dealer_cards and d_score in (20, 21):
-            return True
-        return False
-    if state in ("2", "3"):
-        return False
-    if dealer_cards and d_score > 21:
-        return True
-    if len(player_cards) >= 5 or len(dealer_cards) >= 5:
-        return True
-    return False
 
 def monitor_active_games():
     global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history
@@ -263,7 +286,7 @@ def monitor_active_games():
             for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
                     del d[game_id]
-            print(f"🏁 Игра {game_id} завершена (state={state}, d_score={d_score})", flush=True)
+            print(f"🏁 Игра {game_id} завершена (state={state}, p_score={p_score}, d_score={d_score})", flush=True)
 
 def main():
     global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history
