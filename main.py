@@ -228,16 +228,41 @@ def edit_message(message_id, text):
         return False
 
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    """Проверяет, завершена ли игра — ТОЛЬКО ПО STATE!"""
-    # state 5 — игра точно завершена
-    if state == "5":
+    """Проверяет, завершена ли игра"""
+    
+    # 1. Сервер сказал, что игра завершена
+    if state in ["4", "5"]:
         return True
     
-    # state 4 — дилер закончил, завершаем
-    if state == "4":
+    # 2. Если у игрока 5 карт — дальше ходов нет
+    if len(player_cards) >= 5:
         return True
     
-    # НИКАКИХ ДРУГИХ УСЛОВИЙ!
+    # 3. Если у дилера 5 карт — дальше ходов нет
+    if len(dealer_cards) >= 5:
+        return True
+    
+    # 4. Если дилер перебрал (> 21) — игра завершена
+    if dealer_cards and d_score > 21:
+        return True
+    
+    # 5. Если игрок перебрал (> 21) — игра завершена
+    if player_cards and p_score > 21:
+        return True
+    
+    # 6. Если у игрока или дилера ровно 21 — игра завершена
+    if p_score == 21 or d_score == 21:
+        return True
+    
+    # 7. Если дилер остановился (2+ карты и >= 17)
+    if dealer_cards and len(dealer_cards) >= 2 and d_score >= 17:
+        return True
+    
+    # 8. Если у игрока закончились ходы (пас)
+    # state 2 — игрок закончил, дилер ходит
+    if state == "2":
+        return False  # дилер ещё может ходить
+    
     return False
 
 # =====================================================================
