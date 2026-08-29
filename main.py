@@ -111,6 +111,9 @@ def format_cards(cards):
         result.append(f"{rank}{suit}")
     return "".join(result)
 
+# =============================================================
+# ⭐ ПРАВИЛЬНЫЙ ПОДСЧЕТ ТУЗОВ
+# =============================================================
 def calculate_score(cards):
     if not cards:
         return 0
@@ -118,25 +121,26 @@ def calculate_score(cards):
     score = 0
     aces = 0
     
+    # Считаем все карты, тузы как 11
     for c in cards:
         cv = c.get("CV", 0)
-        if cv == 14:      # Туз
+        if cv == 14:  # Туз
             aces += 1
             score += 11
-        elif cv == 13:    # Король = 4
+        elif cv == 13:   # Король
             score += 4
-        elif cv == 12:    # Дама = 3
+        elif cv == 12:   # Дама
             score += 3
-        elif cv == 11:    # Валет = 2
+        elif cv == 11:   # Валет
             score += 2
         elif 6 <= cv <= 10:
             score += cv
     
-    # Если два туза — всегда 21
+    # ОСОБЫЙ СЛУЧАЙ: два туза = 21
     if aces == 2:
         return 21
     
-    # Если перебор и есть тузы — превращаем 11 → 1
+    # Если перебор - превращаем тузы из 11 в 1
     while score > 21 and aces > 0:
         score -= 10
         aces -= 1
@@ -228,15 +232,27 @@ def edit_message(message_id, text):
         return False
 
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    """
-    Игра считается завершённой ТОЛЬКО на state=4 или state=5.
-    Никаких дополнительных условий!
-    """
-    # ТОЛЬКО state 4 или 5 — игра завершена
-    if state in ["4", "5"]:
+    # ТОЛЬКО state 5 — игра точно завершена
+    if state == "5":
         return True
     
-    # ВСЕ остальные state (0, 1, 2, 3) — игра НЕ завершена
+    # state 4 — дилер закончил, завершаем
+    if state == "4":
+        return True
+    
+    # state 2 — игрок закончил, дилер ходит
+    # НЕ ЗАВЕРШАЕМ НИ ПРИ КАКИХ УСЛОВИЯХ!
+    if state == "2":
+        return False
+    
+    # state 3 — дилер берёт, не завершаем
+    if state == "3":
+        return False
+    
+    # Если у игрока или дилера 5 карт — игра завершена
+    if len(player_cards) >= 5 or len(dealer_cards) >= 5:
+        return True
+    
     return False
 
 # =====================================================================
@@ -260,13 +276,7 @@ def monitor_active_games():
         if not data:
             continue
         
-        # 🔥 ФИКС: проверяем, что data.get("Value") не None
-        value_data = data.get("Value")
-        if value_data is None:
-            print(f"⚠️ Нет данных Value для игры {game_id}", flush=True)
-            continue
-        
-        sc = value_data.get("SC", {})
+        sc = data.get("Value", {}).get("SC", {})
         
         player_cards = []
         dealer_cards = []
@@ -285,6 +295,10 @@ def monitor_active_games():
                     dealer_cards = []
             if item.get("Key") == "STATE":
                 state = item.get("Value")
+                # =============================================================
+                # 🔍 ОТЛАДКА - ВЫВОДИМ STATE ДЛЯ КАЖДОЙ ИГРЫ
+                # =============================================================
+                print(f"🔍 Игра {game_id}: STATE={state} (тип: {type(state).__name__})", flush=True)
         
         if not player_cards:
             continue
@@ -339,7 +353,6 @@ def monitor_active_games():
                 messages[game_id] = msg_id
                 print(f"📤 Новая игра {game_id}: {msg}", flush=True)
         
-        # 🔥 ИСПРАВЛЕНО: завершаем ТОЛЬКО на state=4 или 5
         if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
             processed_games.add(game_id)
             if game_id in messages:
