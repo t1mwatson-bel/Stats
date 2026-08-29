@@ -228,40 +228,24 @@ def edit_message(message_id, text):
         return False
 
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    """Проверяет, завершена ли игра — ТОЛЬКО ПО STATE!"""
-    
     # ТОЛЬКО state 5 — игра точно завершена
     if state == "5":
         return True
     
-    # state 4 — дилер закончил, но ждём state 5
-    # НЕ ЗАВЕРШАЕМ на state 4!
+    # state 4 — дилер закончил, завершаем
     if state == "4":
-        # Если дилер перебрал — можно завершить
-        if dealer_cards and d_score > 21:
-            return True
-        # Если у игрока 21 и дилер не может перебить
-        if player_cards and p_score == 21:
-            if dealer_cards and d_score < 21:
-                return True
-        return False
+        return True
     
-    # state 2 — игрок закончил, но дилер ещё ходит
-    # НЕ ЗАВЕРШАЕМ!
+    # state 2 — игрок закончил, дилер ходит
+    # НЕ ЗАВЕРШАЕМ НИ ПРИ КАКИХ УСЛОВИЯХ!
     if state == "2":
-        # Если дилер уже остановился (2+ карты и >= 17)
-        if dealer_cards and len(dealer_cards) >= 2 and d_score >= 17:
-            return True
-        # Если дилер перебрал
-        if dealer_cards and d_score > 21:
-            return True
-        # Если у дилера 5 карт
-        if dealer_cards and len(dealer_cards) >= 5:
-            return True
-        # Ждём, пока дилер доберёт
         return False
     
-    # Если у игрока или дилера 5 карт
+    # state 3 — дилер берёт, не завершаем
+    if state == "3":
+        return False
+    
+    # Если у игрока или дилера 5 карт — игра завершена
     if len(player_cards) >= 5 or len(dealer_cards) >= 5:
         return True
     
