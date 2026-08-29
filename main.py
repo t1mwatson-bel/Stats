@@ -85,10 +85,6 @@ def format_cards(cards):
         return ""
     return "".join(f"{RANKS.get(c.get('CV',0), str(c.get('CV',0)))}{SUITS_NAMES.get(c.get('CS',0), '?')}" for c in cards)
 
-# =============================================================
-# ФУНКЦИЯ calculate_score
-# ТУЗЫ ВСЕГДА 11, КРОМЕ ДВУХ ТУЗОВ В НАЧАЛЬНОЙ РУКЕ → 21
-# =============================================================
 def calculate_score(cards):
     if not cards:
         return 0
@@ -108,43 +104,29 @@ def calculate_score(cards):
         elif 6 <= cv <= 10:
             score += cv
 
-    # Два туза в начальной руке → 21
     if len(cards) == 2 and aces == 2:
         return 21
     return score
 
-# =============================================================
-# ИСПРАВЛЕННАЯ ФУНКЦИЯ is_game_finished
-# ПРОВЕРКА BLACKJACK - САМАЯ ПЕРВАЯ!
-# =============================================================
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
     # ✅ ПРОВЕРКА BLACKJACK - САМАЯ ПЕРВАЯ!
-    # Если у игрока 21 с двух карт - игра завершена
     if len(player_cards) == 2 and p_score == 21:
         return True
-    
-    # Если у дилера 21 с двух карт - игра завершена
     if dealer_cards and len(dealer_cards) == 2 and d_score == 21:
         return True
     
-    # Дальше остальные проверки...
     if state == "5":
         return True
-    
     if state == "4":
         if dealer_cards and d_score in (20, 21):
             return True
         return False
-    
     if state in ("2", "3"):
         return False
-    
     if dealer_cards and d_score > 21:
         return True
-    
     if len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5):
         return True
-    
     return False
 
 def get_arrow(state):
@@ -206,6 +188,9 @@ def edit_message(message_id, text):
         print(f"❌ Ошибка редактирования: {e}", flush=True)
         return False
 
+# =============================================================
+# ИСПРАВЛЕННАЯ ФУНКЦИЯ monitor_active_games
+# =============================================================
 def monitor_active_games():
     global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history
     
@@ -222,7 +207,15 @@ def monitor_active_games():
         if not data:
             continue
         
-        sc = data.get("Value", {}).get("SC", {})
+        # ✅ ИСПРАВЛЕНИЕ: проверяем, что Value существует и не None
+        value = data.get("Value")
+        if value is None:
+            continue
+            
+        sc = value.get("SC", {})
+        if not sc:
+            continue
+            
         player_cards = []
         dealer_cards = []
         state = None
