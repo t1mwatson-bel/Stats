@@ -85,6 +85,9 @@ def format_cards(cards):
         return ""
     return "".join(f"{RANKS.get(c.get('CV',0), str(c.get('CV',0)))}{SUITS_NAMES.get(c.get('CS',0), '?')}" for c in cards)
 
+# =============================================================
+# ИСПРАВЛЕННАЯ ФУНКЦИЯ calculate_score
+# =============================================================
 def calculate_score(cards):
     if not cards:
         return 0
@@ -92,22 +95,23 @@ def calculate_score(cards):
     aces = 0
     for c in cards:
         cv = c.get("CV", 0)
-        if cv == 14:
+        if cv == 14:          # Туз
             aces += 1
-            score += 11
-        elif cv == 13:
+            score += 11       # всегда прибавляем 11
+        elif cv == 13:        # Король
             score += 4
-        elif cv == 12:
+        elif cv == 12:        # Дама
             score += 3
-        elif cv == 11:
+        elif cv == 11:        # Валет
             score += 2
-        elif 6 <= cv <= 10:
+        elif 6 <= cv <= 10:   # Числовые карты 6-10
             score += cv
-    if aces == 2:
+
+    # Единственное исключение: ровно две карты и обе - тузы → 21 (а не 22)
+    if len(cards) == 2 and aces == 2:
         return 21
-    while score > 21 and aces > 0:
-        score -= 10
-        aces -= 1
+
+    # Во всех остальных случаях тузы всегда дают 11, без понижения до 1
     return score
 
 def get_arrow(state):
@@ -169,9 +173,6 @@ def edit_message(message_id, text):
         print(f"❌ Ошибка редактирования: {e}", flush=True)
         return False
 
-# =============================================================
-# ТОЛЬКО ЭТА ФУНКЦИЯ ИЗМЕНЕНА
-# =============================================================
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
     if state == "5":
         return True
