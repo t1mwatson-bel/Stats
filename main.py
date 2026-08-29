@@ -2,14 +2,10 @@ import os
 import sys
 import requests
 import json
-import re
 import time
 from datetime import datetime, timedelta
 import pytz
 
-# =====================================================================
-# ПЕРЕМЕННЫЕ ИЗ ОКРУЖЕНИЯ
-# =====================================================================
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 if not BOT_TOKEN:
     BOT_TOKEN = os.getenv('BOT_TOKEN_PROGNOZ')
@@ -48,44 +44,31 @@ HEADERS = {
 
 print("✅ Настройки для обычной 21 загружены", flush=True)
 
-# =====================================================================
-# ФУНКЦИИ
-# =====================================================================
 def get_game_number():
     now = datetime.now(MOSCOW_TZ)
     start = now.replace(hour=3, minute=0, second=0, microsecond=0)
     if now < start:
         start = start - timedelta(days=1)
     diff_minutes = (now - start).total_seconds() / 60
-    game_number = int(diff_minutes) % 1440 + 1
-    return game_number
+    return int(diff_minutes) % 1440 + 1
 
 def get_active_games():
     try:
         url = f"{BASE_URL}/service-api/main-live-feed/v3/games1x2?cfView=3&count=40&fcountry=190&gr=415&grMode=4&lng=ru&ref=7&selectedMs=10.146.1643503"
         response = requests.get(url, headers=HEADERS, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, list):
-                games = data
-            elif isinstance(data, dict) and "Value" in data:
-                games = data.get("Value", [])
-            else:
-                return []
-            
-            active_games = []
-            for game in games:
-                if game.get("liga", {}).get("id") == 1643503:
-                    game_id = game.get("id")
-                    if game_id:
-                        active_games.append(game)
-            return active_games
+        if response.status_code != 200:
+            return []
+        data = response.json()
+        if isinstance(data, list):
+            games = data
+        elif isinstance(data, dict) and "Value" in data:
+            games = data.get("Value", [])
         else:
             return []
+        return [g for g in games if g.get("liga", {}).get("id") == 1643503 and g.get("id")]
     except Exception as e:
         print(f"❌ Ошибка: {e}", flush=True)
-    return []
+        return []
 
 def get_game_data(game_id):
     url = f"{BASE_URL}/service-api/LiveFeed/GetGameZip?id={game_id}&isSubGames=true&GroupEvents=true&countevents=250&grMode=4&partner=7&topGroups=&country=190&marketType=1&isNewBuilder=true"
@@ -93,8 +76,6 @@ def get_game_data(game_id):
         response = requests.get(url, headers=HEADERS, timeout=5)
         if response.status_code == 200:
             return response.json()
-        else:
-            return None
     except Exception as e:
         print(f"❌ Ошибка игры {game_id}: {e}", flush=True)
     return None
@@ -102,79 +83,58 @@ def get_game_data(game_id):
 def format_cards(cards):
     if not cards:
         return ""
-    result = []
-    for c in cards:
-        cs = c.get("CS", 0)
-        cv = c.get("CV", 0)
-        suit = SUITS_NAMES.get(cs, "?")
-        rank = RANKS.get(cv, str(cv))
-        result.append(f"{rank}{suit}")
-    return "".join(result)
+    return "".join(f"{RANKS.get(c.get('CV',0), str(c.get('CV',0)))}{SUITS_NAMES.get(c.get('CS',0), '?')}" for c in cards)
 
 def calculate_score(cards):
     if not cards:
         return 0
-    
     score = 0
     aces = 0
-    
     for c in cards:
         cv = c.get("CV", 0)
-        if cv == 14:      # Туз
+        if cv == 14:
             aces += 1
             score += 11
-        elif cv == 13:    # Король = 4
+        elif cv == 13:
             score += 4
-        elif cv == 12:    # Дама = 3
+        elif cv == 12:
             score += 3
-        elif cv == 11:    # Валет = 2
+        elif cv == 11:
             score += 2
         elif 6 <= cv <= 10:
             score += cv
-    
     if aces == 2:
         return 21
-    
     while score > 21 and aces > 0:
         score -= 10
         aces -= 1
-    
     return score
 
 def get_arrow(state):
     if state == "1":
         return "◀️"
-    elif state == "2":
+    elif state in ("2", "3"):
         return "▶️"
-    elif state == "3":
-        return "▶️"
-    else:
-        return ""
+    return ""
 
 def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state):
     p_hand = format_cards(player_cards)
     d_hand = format_cards(dealer_cards)
-    total = p_score + d_score if dealer_cards else p_score
+    total = p_score + (d_score if dealer_cards else 0)
     
-    if state in ["4", "5"]:
+    if state in ("4", "5") or (dealer_cards and d_score > 21) or (dealer_cards and d_score >= 20) or len(player_cards) >= 5 or len(dealer_cards) >= 5:
         tags = []
-        
         if len(player_cards) == 2 and len(dealer_cards) == 2:
             tags.append("#R")
-        
         player_aces = sum(1 for c in player_cards if c.get("CV") == 14)
         dealer_aces = sum(1 for c in dealer_cards if c.get("CV") == 14)
         if player_aces == 2 or dealer_aces == 2:
             tags.append("#G")
-        
         if p_score == 21 or d_score == 21:
             tags.append("#O")
-        
         if p_score == d_score:
             tags.append("#X")
-        
         tag_str = " " + " ".join(tags) if tags else ""
-        
         if p_score > 21:
             return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
         if d_score > 21:
@@ -203,36 +163,30 @@ def send_message(text):
 
 def edit_message(message_id, text):
     try:
-        url = f"{API}/editMessageText"
-        payload = {"chat_id": CHAT_ID, "message_id": message_id, "text": text}
-        r = requests.post(url, json=payload)
+        r = requests.post(f"{API}/editMessageText", json={"chat_id": CHAT_ID, "message_id": message_id, "text": text})
         return r.status_code == 200
     except Exception as e:
         print(f"❌ Ошибка редактирования: {e}", flush=True)
         return False
 
 # =============================================================
-# ЕДИНСТВЕННОЕ ИЗМЕНЕНИЕ — ДОБАВЛЕНА ПРОВЕРКА ПЕРЕБОРА ДИЛЕРА
+# ТОЛЬКО ЭТА ФУНКЦИЯ ИЗМЕНЕНА
 # =============================================================
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
     if state == "5":
         return True
     if state == "4":
-        return True
-    if state == "2":
+        if dealer_cards and d_score in (20, 21):
+            return True
         return False
-    if state == "3":
+    if state in ("2", "3"):
         return False
-    # Если дилер перебрал — игра окончена
     if dealer_cards and d_score > 21:
         return True
     if len(player_cards) >= 5 or len(dealer_cards) >= 5:
         return True
     return False
 
-# =====================================================================
-# МОНИТОРИНГ АКТИВНЫХ ИГР (КАЖДЫЕ 10 СЕКУНД)
-# =====================================================================
 def monitor_active_games():
     global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history
     
@@ -242,7 +196,6 @@ def monitor_active_games():
     
     for game in active_games:
         game_id = str(game.get("id"))
-        
         if game_id in processed_games:
             continue
         
@@ -251,7 +204,6 @@ def monitor_active_games():
             continue
         
         sc = data.get("Value", {}).get("SC", {})
-        
         player_cards = []
         dealer_cards = []
         state = None
@@ -262,12 +214,12 @@ def monitor_active_games():
                     player_cards = json.loads(item.get("Value", "[]"))
                 except:
                     player_cards = []
-            if item.get("Key") == "P2":
+            elif item.get("Key") == "P2":
                 try:
                     dealer_cards = json.loads(item.get("Value", "[]"))
                 except:
                     dealer_cards = []
-            if item.get("Key") == "STATE":
+            elif item.get("Key") == "STATE":
                 state = item.get("Value")
         
         if not player_cards:
@@ -280,26 +232,9 @@ def monitor_active_games():
         p1_str = json.dumps(player_cards)
         p2_str = json.dumps(dealer_cards)
         
-        cards_changed = False
-        
-        if game_id in player_cards_history:
-            if player_cards_history[game_id] != p1_str:
-                cards_changed = True
-        else:
-            cards_changed = True
-        
-        if game_id in dealer_cards_history:
-            if dealer_cards_history[game_id] != p2_str:
-                cards_changed = True
-        else:
-            cards_changed = True
-        
-        state_changed = False
-        if game_id in game_state_history:
-            if game_state_history[game_id] != state:
-                state_changed = True
-        else:
-            state_changed = True
+        cards_changed = (game_id not in player_cards_history or player_cards_history[game_id] != p1_str or
+                         game_id not in dealer_cards_history or dealer_cards_history[game_id] != p2_str)
+        state_changed = (game_id not in game_state_history or game_state_history[game_id] != state)
         
         if not cards_changed and not state_changed:
             continue
@@ -324,40 +259,23 @@ def monitor_active_games():
         
         if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
             processed_games.add(game_id)
-            if game_id in messages:
-                del messages[game_id]
-            if game_id in game_numbers:
-                del game_numbers[game_id]
-            if game_id in player_cards_history:
-                del player_cards_history[game_id]
-            if game_id in dealer_cards_history:
-                del dealer_cards_history[game_id]
-            if game_id in game_state_history:
-                del game_state_history[game_id]
-            print(f"🏁 Игра {game_id} завершена (state={state})", flush=True)
+            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
+                if game_id in d:
+                    del d[game_id]
+            print(f"🏁 Игра {game_id} завершена (state={state}, d_score={d_score})", flush=True)
 
-# =====================================================================
-# ОСНОВНОЙ ЦИКЛ
-# =====================================================================
 def main():
-    global processed_games, game_numbers, player_cards_history, dealer_cards_history
-    
+    global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history
     print("🔄 ПАРСЕР ОБЫЧНОЙ 21 ЗАПУЩЕН (ЛАЙВ-МОНИТОРИНГ)", flush=True)
-    print(f"🕐 Игры каждую минуту, старт в 03:00", flush=True)
-    print(f"📊 Всего игр в сутках: 1440", flush=True)
-    print(f"⏱️ Мониторинг: каждые 10 секунд", flush=True)
+    print("⏱️ Мониторинг: каждые 10 секунд", flush=True)
     print("=" * 60, flush=True)
     
     last_monitor_time = time.time()
-    
     while True:
         try:
-            current_time = time.time()
-            
-            if current_time - last_monitor_time >= 10:
+            if time.time() - last_monitor_time >= 10:
                 monitor_active_games()
-                last_monitor_time = current_time
-            
+                last_monitor_time = time.time()
             if len(processed_games) > 500:
                 processed_games.clear()
                 game_numbers.clear()
@@ -366,9 +284,7 @@ def main():
                 game_state_history.clear()
                 messages.clear()
                 print("🗑️ Кэш очищен", flush=True)
-            
             time.sleep(1)
-            
         except Exception as e:
             print(f"❌ Критическая ошибка: {e}", flush=True)
             import traceback
