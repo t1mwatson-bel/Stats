@@ -249,6 +249,10 @@ def monitor_active_games():
             game_numbers[game_id] = get_game_number()
         game_number = game_numbers[game_id]
         
+        # ✅ ВЫЧИСЛЯЕМ ОЧКИ ДО ПРОВЕРКИ ИЗМЕНЕНИЙ
+        p_score = calculate_score(player_cards)
+        d_score = calculate_score(dealer_cards) if dealer_cards else 0
+        
         p1_str = json.dumps(player_cards)
         p2_str = json.dumps(dealer_cards)
         
@@ -256,15 +260,23 @@ def monitor_active_games():
                          game_id not in dealer_cards_history or dealer_cards_history[game_id] != p2_str)
         state_changed = (game_id not in game_state_history or game_state_history[game_id] != state)
         
-        if not cards_changed and not state_changed:
+        # ✅ ФОРСИРУЕМ ОБНОВЛЕНИЕ ПРИ БЛЭКДЖЕКЕ
+        force_update = False
+        if len(player_cards) == 2 and p_score == 21:
+            force_update = True
+        if dealer_cards and len(dealer_cards) == 2 and d_score == 21:
+            force_update = True
+        
+        if not cards_changed and not state_changed and not force_update:
             continue
+        
+        # ✅ ЕСЛИ ФОРС-ОБНОВЛЕНИЕ, МЕНЯЕМ ИСТОРИЮ ЧТОБЫ НЕ ЗАЦИКЛИТЬСЯ
+        if force_update and not cards_changed:
+            player_cards_history[game_id] = p1_str + "_FORCED"
         
         player_cards_history[game_id] = p1_str
         dealer_cards_history[game_id] = p2_str
         game_state_history[game_id] = state
-        
-        p_score = calculate_score(player_cards)
-        d_score = calculate_score(dealer_cards) if dealer_cards else 0
         
         msg = build_message(game_number, player_cards, dealer_cards, p_score, d_score, state)
         
