@@ -114,19 +114,27 @@ def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
         return True
     if dealer_cards and len(dealer_cards) == 2 and d_score == 21:
         return True
-    
-    if state == "5":
+
+    # ✅ ПРОВЕРКА ПО STATE (статус игры)
+    if state == "5":  # игра завершена
         return True
-    if state == "4":
+
+    if state == "4":  # дилер доигрывает
         if dealer_cards and d_score in (20, 21):
             return True
         return False
-    if state in ("2", "3"):
+
+    if state in ("2", "3"):  # игра идёт
         return False
+
+    # ✅ ПРОВЕРКА ПО ПЕРЕБОРУ
     if dealer_cards and d_score > 21:
         return True
+
+    # ✅ ПРОВЕРКА ПО КОЛИЧЕСТВУ КАРТ (5 карт — перебор)
     if len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5):
         return True
+
     return False
 
 def get_arrow(state):
