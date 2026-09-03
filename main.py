@@ -120,6 +120,9 @@ def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
         return True
 
     if state == "4":  # дилер доигрывает
+        # ✅ ЕСЛИ У ИГРОКА 21 - ЗАВЕРШАЕМ!
+        if p_score == 21:
+            return True
         if dealer_cards and d_score in (20, 21):
             return True
         return False
@@ -295,6 +298,21 @@ def monitor_active_games():
                 if game_id in d:
                     del d[game_id]
             print(f"🏁 Игра {game_id} завершена (state={state}, p_score={p_score}, d_score={d_score})", flush=True)
+        # ✅ ДОБАВЛЯЕМ ПРИНУДИТЕЛЬНОЕ ЗАВЕРШЕНИЕ ПРИ БЛЭКДЖЕКЕ ИГРОКА
+        elif len(player_cards) == 2 and p_score == 21:
+            # Игрок выиграл блэкджеком, но игра не завершилась по state
+            processed_games.add(game_id)
+            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
+                if game_id in d:
+                    del d[game_id]
+            print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! p_score=21, state={state})", flush=True)
+        elif dealer_cards and len(dealer_cards) == 2 and d_score == 21:
+            # Дилер выиграл блэкджеком
+            processed_games.add(game_id)
+            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
+                if game_id in d:
+                    del d[game_id]
+            print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! d_score=21, state={state})", flush=True)
 
 def main():
     global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history
