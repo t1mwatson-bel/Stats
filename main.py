@@ -153,31 +153,35 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
     total = p_score + (d_score if dealer_cards else 0)
     
     if state in ("4", "5") or (dealer_cards and d_score > 21) or (dealer_cards and d_score >= 20) or len(player_cards) >= 5 or len(dealer_cards) >= 5:
-        tags = []
-        if len(player_cards) == 2 and len(dealer_cards) == 2:
-            tags.append("#R")
-        player_aces = sum(1 for c in player_cards if c.get("CV") == 14)
-        dealer_aces = sum(1 for c in dealer_cards if c.get("CV") == 14)
-        if player_aces == 2 or dealer_aces == 2:
-            tags.append("#G")
-        if p_score == 21 or d_score == 21:
-            tags.append("#O")
-        if p_score == d_score:
-            tags.append("#X")
-        tag_str = " " + " ".join(tags) if tags else ""
-        if p_score > 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
-        if d_score > 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
-        if p_score == 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
-        if d_score == 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
-        if p_score > d_score:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
-        if d_score > p_score:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
-        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str}"
+    tags = []
+    if len(player_cards) == 2 and len(dealer_cards) == 2:
+        tags.append("#R")
+    
+    # ✅ #G - только если ровно 2 карты и оба туза (мягкий 21)
+    player_aces = sum(1 for c in player_cards if c.get("CV") == 14)
+    dealer_aces = sum(1 for c in dealer_cards if c.get("CV") == 14)
+    if (len(player_cards) == 2 and player_aces == 2) or (len(dealer_cards) == 2 and dealer_aces == 2):
+        tags.append("#G")
+    
+    if p_score == 21 or d_score == 21:
+        tags.append("#O")
+    if p_score == d_score:
+        tags.append("#X")
+    
+    tag_str = " " + " ".join(tags) if tags else ""
+    if p_score > 21:
+        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
+    if d_score > 21:
+        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
+    if p_score == 21:
+        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
+    if d_score == 21:
+        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
+    if p_score > d_score:
+        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
+    if d_score > p_score:
+        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
+    return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str}"
     
     arrow = get_arrow(state)
     return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
