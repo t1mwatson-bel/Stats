@@ -32,6 +32,7 @@ player_cards_history = {}
 dealer_cards_history = {}  
 game_state_history = {}  
 
+# Оставляем старые словари для совместимости (они не используются в новых функциях)
 SUITS_NAMES = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A"}
 
@@ -80,33 +81,62 @@ def get_game_data(game_id):
         print(f"❌ Ошибка игры {game_id}: {e}", flush=True)
     return None
 
+# ====================================================================
+# НОВЫЕ ФУНКЦИИ ПАРСИНГА (взяты из нового кода)
+# ====================================================================
+
+def get_cards(value_str):
+    """Преобразует JSON-строку карт в список строк (например, ['A♠', '10♦'])"""
+    if not value_str or value_str == "[]":
+        return []
+    try:
+        cards = json.loads(value_str)
+        result = []
+        suit_map = {0: '♠', 1: '♣', 2: '♦', 3: '♥'}
+        rank_map = {'1': 'A', '6': '6', '7': '7', '8': '8', '9': '9', '10': '10', '11': 'J', '12': 'Q', '13': 'K', '14': 'A'}
+        for card in cards:
+            cs = card.get('CS', '?')
+            cv = card.get('CV', '?')
+            try:
+                cv_num = int(cv)
+            except:
+                cv_num = cv
+            rank = rank_map.get(str(cv_num), str(cv_num))
+            suit = suit_map.get(cs, '')
+            if rank and suit:
+                card_str = f"{rank}{suit}"
+                if card_str not in result:
+                    result.append(card_str)
+        return result
+    except:
+        return []
+
 def format_cards(cards):
+    """Форматирует список строк карт в одну строку (без разделителей)"""
     if not cards:
         return ""
-    return "".join(f"{RANKS.get(c.get('CV',0), str(c.get('CV',0)))}{SUITS_NAMES.get(c.get('CS',0), '?')}" for c in cards)
+    return ''.join(cards)
 
 def calculate_score(cards):
+    """Считает очки по списку строк карт"""
     if not cards:
         return 0
     score = 0
-    aces = 0
-    for c in cards:
-        cv = c.get("CV", 0)
-        if cv == 14:
-            aces += 1
-            score += 11
-        elif cv == 13:
-            score += 4
-        elif cv == 12:
-            score += 3
-        elif cv == 11:
-            score += 2
-        elif 6 <= cv <= 10:
-            score += cv
-
-    if len(cards) == 2 and aces == 2:
-        return 21
+    for card in cards:
+        if not card:
+            continue
+        if card.startswith('10'): score += 10
+        elif card.startswith('6'): score += 6
+        elif card.startswith('7'): score += 7
+        elif card.startswith('8'): score += 8
+        elif card.startswith('9'): score += 9
+        elif card.startswith('J'): score += 2
+        elif card.startswith('Q'): score += 3
+        elif card.startswith('K'): score += 4
+        elif card.startswith('A'): score += 11
     return score
+
+# ====================================================================
 
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
     # ✅ ПРОВЕРКА BLACKJACK - САМАЯ ПЕРВАЯ!
@@ -153,35 +183,35 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
     total = p_score + (d_score if dealer_cards else 0)
     
     if state in ("4", "5") or (dealer_cards and d_score > 21) or (dealer_cards and d_score >= 20) or len(player_cards) >= 5 or len(dealer_cards) >= 5:
-    tags = []
-    if len(player_cards) == 2 and len(dealer_cards) == 2:
-        tags.append("#R")
-    
-    # ✅ #G - только если ровно 2 карты и оба туза (мягкий 21)
-    player_aces = sum(1 for c in player_cards if c.get("CV") == 14)
-    dealer_aces = sum(1 for c in dealer_cards if c.get("CV") == 14)
-    if (len(player_cards) == 2 and player_aces == 2) or (len(dealer_cards) == 2 and dealer_aces == 2):
-        tags.append("#G")
-    
-    if p_score == 21 or d_score == 21:
-        tags.append("#O")
-    if p_score == d_score:
-        tags.append("#X")
-    
-    tag_str = " " + " ".join(tags) if tags else ""
-    if p_score > 21:
-        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
-    if d_score > 21:
-        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
-    if p_score == 21:
-        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
-    if d_score == 21:
-        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
-    if p_score > d_score:
-        return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
-    if d_score > p_score:
-        return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
-    return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str}"
+        tags = []
+        if len(player_cards) == 2 and len(dealer_cards) == 2:
+            tags.append("#R")
+        
+        # ✅ #G - только если ровно 2 карты и оба туза (мягкий 21)
+        player_aces = sum(1 for c in player_cards if c and c[0] == 'A')
+        dealer_aces = sum(1 for c in dealer_cards if c and c[0] == 'A')
+        if (len(player_cards) == 2 and player_aces == 2) or (len(dealer_cards) == 2 and dealer_aces == 2):
+            tags.append("#G")
+        
+        if p_score == 21 or d_score == 21:
+            tags.append("#O")
+        if p_score == d_score:
+            tags.append("#X")
+        
+        tag_str = " " + " ".join(tags) if tags else ""
+        if p_score > 21:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
+        if d_score > 21:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
+        if p_score == 21:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
+        if d_score == 21:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
+        if p_score > d_score:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
+        if d_score > p_score:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
+        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str}"
     
     arrow = get_arrow(state)
     return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
@@ -204,7 +234,7 @@ def edit_message(message_id, text):
         return False
 
 # =============================================================
-# ИСПРАВЛЕННАЯ ФУНКЦИЯ monitor_active_games
+# ИСПРАВЛЕННАЯ ФУНКЦИЯ monitor_active_games (с использованием get_cards)
 # =============================================================
 def monitor_active_games():
     global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history
@@ -222,7 +252,6 @@ def monitor_active_games():
         if not data:
             continue
         
-        # ✅ ИСПРАВЛЕНИЕ: проверяем, что Value существует и не None
         value = data.get("Value")
         if value is None:
             continue
@@ -237,15 +266,10 @@ def monitor_active_games():
         
         for item in sc.get("S", []):
             if item.get("Key") == "P1":
-                try:
-                    player_cards = json.loads(item.get("Value", "[]"))
-                except:
-                    player_cards = []
+                # Используем get_cards вместо json.loads
+                player_cards = get_cards(item.get("Value", "[]"))
             elif item.get("Key") == "P2":
-                try:
-                    dealer_cards = json.loads(item.get("Value", "[]"))
-                except:
-                    dealer_cards = []
+                dealer_cards = get_cards(item.get("Value", "[]"))
             elif item.get("Key") == "STATE":
                 state = item.get("Value")
         
@@ -256,18 +280,17 @@ def monitor_active_games():
             game_numbers[game_id] = get_game_number()
         game_number = game_numbers[game_id]
         
-        # ✅ ВЫЧИСЛЯЕМ ОЧКИ ДО ПРОВЕРКИ ИЗМЕНЕНИЙ
+        # ✅ ВЫЧИСЛЯЕМ ОЧКИ
         p_score = calculate_score(player_cards)
         d_score = calculate_score(dealer_cards) if dealer_cards else 0
         
-        p1_str = json.dumps(player_cards)
+        p1_str = json.dumps(player_cards)  # теперь это список строк
         p2_str = json.dumps(dealer_cards)
         
         cards_changed = (game_id not in player_cards_history or player_cards_history[game_id] != p1_str or
                          game_id not in dealer_cards_history or dealer_cards_history[game_id] != p2_str)
         state_changed = (game_id not in game_state_history or game_state_history[game_id] != state)
         
-        # ✅ ФОРСИРУЕМ ОБНОВЛЕНИЕ ПРИ БЛЭКДЖЕКЕ
         force_update = False
         if len(player_cards) == 2 and p_score == 21:
             force_update = True
@@ -277,7 +300,6 @@ def monitor_active_games():
         if not cards_changed and not state_changed and not force_update:
             continue
         
-        # ✅ ЕСЛИ ФОРС-ОБНОВЛЕНИЕ, МЕНЯЕМ ИСТОРИЮ ЧТОБЫ НЕ ЗАЦИКЛИТЬСЯ
         if force_update and not cards_changed:
             player_cards_history[game_id] = p1_str + "_FORCED"
         
@@ -302,16 +324,13 @@ def monitor_active_games():
                 if game_id in d:
                     del d[game_id]
             print(f"🏁 Игра {game_id} завершена (state={state}, p_score={p_score}, d_score={d_score})", flush=True)
-        # ✅ ДОБАВЛЯЕМ ПРИНУДИТЕЛЬНОЕ ЗАВЕРШЕНИЕ ПРИ БЛЭКДЖЕКЕ ИГРОКА
         elif len(player_cards) == 2 and p_score == 21:
-            # Игрок выиграл блэкджеком, но игра не завершилась по state
             processed_games.add(game_id)
             for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
                     del d[game_id]
             print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! p_score=21, state={state})", flush=True)
         elif dealer_cards and len(dealer_cards) == 2 and d_score == 21:
-            # Дилер выиграл блэкджеком
             processed_games.add(game_id)
             for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
