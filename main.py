@@ -164,9 +164,9 @@ def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
     if state in ("2", "3"):
     # Дилер добирает, пока не наберёт 17+ или не переберёт
     if dealer_cards and d_score < 17:
-        return False  # НЕ ЗАВЕРШАЕМ, ДИЛЕР ДОБИРАЕТ
+        return False
     if dealer_cards and d_score >= 17:
-        return True   # ДИЛЕР НАБРАЛ 17+ — ЗАВЕРШАЕМ
+        return True
     return False
 
     if dealer_cards and d_score > 21:
