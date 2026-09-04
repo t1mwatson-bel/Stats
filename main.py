@@ -2,6 +2,7 @@ import os
 import sys
 import requests
 import json
+import re
 import time
 from datetime import datetime, timedelta
 import pytz
@@ -261,7 +262,19 @@ def monitor_active_games():
         sc = value.get("SC", {})
         if not sc:
             continue
-            
+        
+        # ===== ИЗВЛЕЧЕНИЕ НОМЕРА ИГРЫ ИЗ API (DI или TN) + ОПЕРЕЖЕНИЕ 1 =====
+        raw_game_num = value.get("DI") or value.get("TN")
+        if raw_game_num:
+            match = re.search(r'\d+', str(raw_game_num))
+            if match:
+                game_num = int(match.group()) + 1  # ОПЕРЕЖЕНИЕ НА 1
+            else:
+                game_num = get_game_number() + 1
+        else:
+            game_num = get_game_number() + 1
+        # ===================================================================
+        
         player_cards = []
         dealer_cards = []
         state = None
@@ -274,9 +287,10 @@ def monitor_active_games():
             elif item.get("Key") == "STATE":
                 state = item.get("Value")
         
+        # Если нет карт игрока и state=0 — отправляем "ожидание"
         if not player_cards and state == "0":
             if game_id not in game_numbers:
-                game_numbers[game_id] = get_game_number()
+                game_numbers[game_id] = game_num
             game_number = game_numbers[game_id]
             
             if game_id not in messages:
@@ -291,7 +305,7 @@ def monitor_active_games():
             continue
         
         if game_id not in game_numbers:
-            game_numbers[game_id] = get_game_number()
+            game_numbers[game_id] = game_num
         game_number = game_numbers[game_id]
         
         p_score = calculate_score(player_cards)
