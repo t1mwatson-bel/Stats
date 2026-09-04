@@ -81,7 +81,7 @@ def get_game_data(game_id):
     return None
 
 # ====================================================================
-# НОВЫЕ ФУНКЦИИ ПАРСИНГА
+# ФУНКЦИИ ПАРСИНГА КАРТ
 # ====================================================================
 
 def get_cards(value_str):
@@ -118,12 +118,11 @@ def calculate_score(cards):
     if not cards:
         return 0
     
-    # Два туза в стартовой руке = 21 (блэкджек)
+    # Два туза = 21 (блэкджек)
     if len(cards) == 2 and all(c and c[0] == 'A' for c in cards):
         return 21
     
     score = 0
-    aces = 0
     for card in cards:
         if not card:
             continue
@@ -136,40 +135,39 @@ def calculate_score(cards):
         elif card.startswith('Q'): score += 3
         elif card.startswith('K'): score += 4
         elif card.startswith('A'): score += 11
-    
-    while score > 21 and aces > 0:
-        score -= 10
-        aces -= 1
     return score
 
 # ====================================================================
 
 def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    # ✅ ПРОВЕРКА BLACKJACK - САМАЯ ПЕРВАЯ!
+    # ✅ ПРОВЕРКА BLACKJACK
     if len(player_cards) == 2 and p_score == 21:
         return True
     if dealer_cards and len(dealer_cards) == 2 and d_score == 21:
         return True
 
-    # ✅ ПРОВЕРКА ПО STATE (статус игры)
-    if state == "5":  # игра завершена
+    # ✅ ПРОВЕРКА ПО STATE
+    if state == "5":
         return True
 
-    if state == "4":  # дилер доигрывает
+    if state == "4":
         if p_score == 21:
             return True
         if dealer_cards and d_score in (20, 21):
             return True
         return False
 
-    if state in ("2", "3"):  # игра идёт
+    # ✅ КОСТЫЛЬ: если у дилера 3+ карты, а state="2"/"3" — завершаем
+    if state in ("2", "3"):
+        if dealer_cards and len(dealer_cards) >= 3:
+            return True
         return False
 
     # ✅ ПРОВЕРКА ПО ПЕРЕБОРУ
     if dealer_cards and d_score > 21:
         return True
 
-    # ✅ ПРОВЕРКА ПО КОЛИЧЕСТВУ КАРТ (5 карт — перебор)
+    # ✅ 5 КАРТ — ПЕРЕБОР
     if len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5):
         return True
 
@@ -182,7 +180,7 @@ def get_arrow(state):
         return "▶️"
     return ""
 
-def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state):
+def build_message(game_num, game_id, player_cards, dealer_cards, p_score, d_score, state):
     p_hand = format_cards(player_cards)
     d_hand = format_cards(dealer_cards)
     total = p_score + (d_score if dealer_cards else 0)
@@ -211,21 +209,21 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
         
         tag_str = " " + " ".join(tags) if tags else ""
         if p_score > 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
         if d_score > 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
         if p_score == 21:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
         if d_score == 21:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
         if p_score > d_score:
-            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str}"
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
         if d_score > p_score:
-            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str}"
-        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str}"
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
+        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
     
     arrow = get_arrow(state)
-    return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total}"
+    return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total} (ID: {game_id})"
 
 def send_message(text):
     try:
@@ -280,6 +278,20 @@ def monitor_active_games():
             elif item.get("Key") == "STATE":
                 state = item.get("Value")
         
+        # Если нет карт игрока и state=0 — отправляем "ожидание"
+        if not player_cards and state == "0":
+            if game_id not in game_numbers:
+                game_numbers[game_id] = get_game_number()
+            game_number = game_numbers[game_id]
+            
+            if game_id not in messages:
+                msg = f"⏳ Ожидание игры #N{game_number} (ID: {game_id})"
+                msg_id = send_message(msg)
+                if msg_id:
+                    messages[game_id] = msg_id
+                    print(f"📤 Ожидание игры {game_id} (№{game_number})", flush=True)
+            continue
+        
         if not player_cards:
             continue
         
@@ -313,7 +325,7 @@ def monitor_active_games():
         dealer_cards_history[game_id] = p2_str
         game_state_history[game_id] = state
         
-        msg = build_message(game_number, player_cards, dealer_cards, p_score, d_score, state)
+        msg = build_message(game_number, game_id, player_cards, dealer_cards, p_score, d_score, state)
         
         if game_id in messages:
             edit_message(messages[game_id], msg)
