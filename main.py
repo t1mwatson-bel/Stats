@@ -135,9 +135,7 @@ def calculate_score(cards):
         elif card.startswith('J'): score += 2
         elif card.startswith('Q'): score += 3
         elif card.startswith('K'): score += 4
-        elif card.startswith('A'):
-            aces += 1
-            score += 11
+        elif card.startswith('A'): score += 11
     
     while score > 21 and aces > 0:
         score -= 10
