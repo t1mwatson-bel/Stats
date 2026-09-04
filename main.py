@@ -287,7 +287,7 @@ def monitor_active_games():
         # Если нет карт игрока и state=0 — отправляем "ожидание"
         if not player_cards and state == "0":
             if game_id not in game_numbers:
-                game_numbers[game_id] = get_game_number_from_time(game_detected_time[game_id])
+                game_numbers[game_id] = get_game_number() + 2
             game_number = game_numbers[game_id]
             
             if game_id not in messages:
@@ -302,7 +302,7 @@ def monitor_active_games():
             continue
         
         if game_id not in game_numbers:
-            game_numbers[game_id] = get_game_number_from_time(game_detected_time[game_id])
+            game_numbers[game_id] = get_game_number() + 2
         game_number = game_numbers[game_id]
         
         p_score = calculate_score(player_cards)
