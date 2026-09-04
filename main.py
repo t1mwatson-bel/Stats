@@ -31,7 +31,6 @@ game_numbers = {}
 player_cards_history = {}  
 dealer_cards_history = {}  
 game_state_history = {}  
-game_detected_time = {}  # Хранит время первого обнаружения игры
 
 SUITS_NAMES = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A"}
@@ -45,12 +44,12 @@ HEADERS = {
 
 print("✅ Настройки для обычной 21 загружены", flush=True)
 
-def get_game_number_from_time(detected_time):
-    """Возвращает номер игры от времени первого обнаружения (detected_time)"""
-    start = detected_time.replace(hour=3, minute=0, second=0, microsecond=0)
-    if detected_time < start:
+def get_game_number():
+    now = datetime.now(MOSCOW_TZ)
+    start = now.replace(hour=3, minute=0, second=0, microsecond=0)
+    if now < start:
         start = start - timedelta(days=1)
-    diff_minutes = (detected_time - start).total_seconds() / 60
+    diff_minutes = (now - start).total_seconds() / 60
     return int(diff_minutes) % 1440 + 1
 
 def get_active_games():
@@ -158,17 +157,14 @@ def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
             return True
         return False
 
-    # ✅ КОСТЫЛЬ: если у дилера 3+ карты, а state="2"/"3" — завершаем
     if state in ("2", "3"):
         if dealer_cards and len(dealer_cards) >= 3:
             return True
         return False
 
-    # ✅ ПРОВЕРКА ПО ПЕРЕБОРУ
     if dealer_cards and d_score > 21:
         return True
 
-    # ✅ 5 КАРТ — ПЕРЕБОР
     if len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5):
         return True
 
@@ -186,7 +182,6 @@ def build_message(game_num, game_id, player_cards, dealer_cards, p_score, d_scor
     d_hand = format_cards(dealer_cards)
     total = p_score + (d_score if dealer_cards else 0)
     
-    # ✅ Проверяем, завершена ли игра по очкам (не только по state)
     finished_by_score = (
         p_score > 21 or d_score > 21 or
         p_score == 21 or d_score == 21 or
@@ -244,7 +239,7 @@ def edit_message(message_id, text):
         return False
 
 def monitor_active_games():
-    global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history, game_detected_time
+    global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history
     
     active_games = get_active_games()
     if not active_games:
@@ -279,15 +274,9 @@ def monitor_active_games():
             elif item.get("Key") == "STATE":
                 state = item.get("Value")
         
-        # ✅ Запоминаем время первого обнаружения игры
-        if game_id not in game_detected_time:
-            game_detected_time[game_id] = datetime.now(MOSCOW_TZ)
-            print(f"⏱️ Запоминаем время для игры {game_id}: {game_detected_time[game_id].strftime('%H:%M:%S')}", flush=True)
-        
-        # Если нет карт игрока и state=0 — отправляем "ожидание"
         if not player_cards and state == "0":
             if game_id not in game_numbers:
-                game_numbers[game_id] = get_game_number() + 2
+                game_numbers[game_id] = get_game_number()
             game_number = game_numbers[game_id]
             
             if game_id not in messages:
@@ -302,7 +291,7 @@ def monitor_active_games():
             continue
         
         if game_id not in game_numbers:
-            game_numbers[game_id] = get_game_number() + 2
+            game_numbers[game_id] = get_game_number()
         game_number = game_numbers[game_id]
         
         p_score = calculate_score(player_cards)
@@ -344,25 +333,25 @@ def monitor_active_games():
         
         if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
             processed_games.add(game_id)
-            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history, game_detected_time):
+            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
                     del d[game_id]
             print(f"🏁 Игра {game_id} завершена (state={state}, p_score={p_score}, d_score={d_score})", flush=True)
         elif len(player_cards) == 2 and p_score == 21:
             processed_games.add(game_id)
-            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history, game_detected_time):
+            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
                     del d[game_id]
             print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! p_score=21, state={state})", flush=True)
         elif dealer_cards and len(dealer_cards) == 2 and d_score == 21:
             processed_games.add(game_id)
-            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history, game_detected_time):
+            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
                     del d[game_id]
             print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! d_score=21, state={state})", flush=True)
 
 def main():
-    global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history, game_detected_time
+    global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history
     print("🔄 ПАРСЕР ОБЫЧНОЙ 21 ЗАПУЩЕН (ЛАЙВ-МОНИТОРИНГ)", flush=True)
     print("⏱️ Мониторинг: каждые 10 секунд", flush=True)
     print("=" * 60, flush=True)
@@ -379,7 +368,6 @@ def main():
                 player_cards_history.clear()
                 dealer_cards_history.clear()
                 game_state_history.clear()
-                game_detected_time.clear()
                 messages.clear()
                 print("🗑️ Кэш очищен", flush=True)
             time.sleep(1)
