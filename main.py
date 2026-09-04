@@ -31,6 +31,7 @@ game_numbers = {}
 player_cards_history = {}  
 dealer_cards_history = {}  
 game_state_history = {}  
+game_detected_time = {}  # Хранит время первого обнаружения игры
 
 SUITS_NAMES = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A"}
@@ -44,12 +45,12 @@ HEADERS = {
 
 print("✅ Настройки для обычной 21 загружены", flush=True)
 
-def get_game_number():
-    now = datetime.now(MOSCOW_TZ)
-    start = now.replace(hour=3, minute=0, second=0, microsecond=0)
-    if now < start:
+def get_game_number_from_time(detected_time):
+    """Возвращает номер игры от времени первого обнаружения (detected_time)"""
+    start = detected_time.replace(hour=3, minute=0, second=0, microsecond=0)
+    if detected_time < start:
         start = start - timedelta(days=1)
-    diff_minutes = (now - start).total_seconds() / 60
+    diff_minutes = (detected_time - start).total_seconds() / 60
     return int(diff_minutes) % 1440 + 1
 
 def get_active_games():
@@ -361,7 +362,7 @@ def monitor_active_games():
             print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! d_score=21, state={state})", flush=True)
 
 def main():
-    global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history
+    global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history, game_detected_time
     print("🔄 ПАРСЕР ОБЫЧНОЙ 21 ЗАПУЩЕН (ЛАЙВ-МОНИТОРИНГ)", flush=True)
     print("⏱️ Мониторинг: каждые 10 секунд", flush=True)
     print("=" * 60, flush=True)
@@ -378,6 +379,7 @@ def main():
                 player_cards_history.clear()
                 dealer_cards_history.clear()
                 game_state_history.clear()
+                game_detected_time.clear()
                 messages.clear()
                 print("🗑️ Кэш очищен", flush=True)
             time.sleep(1)
