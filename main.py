@@ -45,7 +45,7 @@ HEADERS = {
 
 print("✅ Настройки для обычной 21 загружены", flush=True)
 
-def get_game_number():
+def get_game_number_fallback():
     now = datetime.now(MOSCOW_TZ)
     start = now.replace(hour=3, minute=0, second=0, microsecond=0)
     if now < start:
@@ -263,17 +263,17 @@ def monitor_active_games():
         if not sc:
             continue
         
-        # ===== ИЗВЛЕЧЕНИЕ НОМЕРА ИГРЫ ИЗ API (DI или TN) + ОПЕРЕЖЕНИЕ 1 =====
+        # ===== ИЗВЛЕЧЕНИЕ НОМЕРА ИГРЫ ИЗ API (DI или TN) =====
         raw_game_num = value.get("DI") or value.get("TN")
         if raw_game_num:
             match = re.search(r'\d+', str(raw_game_num))
             if match:
-                game_num = int(match.group()) + 1  # ОПЕРЕЖЕНИЕ НА 1
+                game_num = int(match.group())
             else:
-                game_num = get_game_number() + 1
+                game_num = get_game_number_fallback()
         else:
-            game_num = get_game_number() + 1
-        # ===================================================================
+            game_num = get_game_number_fallback()
+        # =====================================================
         
         player_cards = []
         dealer_cards = []
