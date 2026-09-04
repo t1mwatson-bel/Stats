@@ -118,10 +118,15 @@ def format_cards(cards):
     return ''.join(cards)
 
 def calculate_score(cards):
-    """Считает очки по списку строк карт"""
     if not cards:
         return 0
+    
+    # Два туза в стартовой руке = 21 (блэкджек)
+    if len(cards) == 2 and all(c and c[0] == 'A' for c in cards):
+        return 21
+    
     score = 0
+    aces = 0
     for card in cards:
         if not card:
             continue
@@ -133,7 +138,14 @@ def calculate_score(cards):
         elif card.startswith('J'): score += 2
         elif card.startswith('Q'): score += 3
         elif card.startswith('K'): score += 4
-        elif card.startswith('A'): score += 11
+        elif card.startswith('A'):
+            aces += 1
+            score += 11
+    
+    # Корректировка: если перебор, уменьшаем тузы с 11 до 1
+    while score > 21 and aces > 0:
+        score -= 10
+        aces -= 1
     return score
 
 # ====================================================================
@@ -265,13 +277,10 @@ def monitor_active_games():
         state = None
         
         for item in sc.get("S", []):
-            if item.get("Key") == "P1":
-                # Используем get_cards вместо json.loads
-                player_cards = get_cards(item.get("Value", "[]"))
-            elif item.get("Key") == "P2":
-                dealer_cards = get_cards(item.get("Value", "[]"))
-            elif item.get("Key") == "STATE":
-                state = item.get("Value")
+    if item.get("Key") == "P1":
+        player_cards = get_cards(item.get("Value", "[]"))
+    elif item.get("Key") == "P2":
+        dealer_cards = get_cards(item.get("Value", "[]"))
         
         if not player_cards:
             continue
