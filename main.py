@@ -7,6 +7,9 @@ import time
 from datetime import datetime, timedelta
 import pytz
 
+# =====================================================================
+# НАСТРОЙКИ
+# =====================================================================
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 if not BOT_TOKEN:
     BOT_TOKEN = os.getenv('BOT_TOKEN_PROGNOZ')
@@ -51,7 +54,7 @@ def get_game_number_fallback():
     if now < start:
         start = start - timedelta(days=1)
     diff_minutes = (now - start).total_seconds() / 60
-    return int(diff_minutes) % 1440 + 1
+    return int(diff_minutes / 1) % 1440 + 1
 
 def get_active_games():
     try:
