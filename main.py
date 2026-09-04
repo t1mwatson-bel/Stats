@@ -32,7 +32,6 @@ player_cards_history = {}
 dealer_cards_history = {}  
 game_state_history = {}  
 
-# Оставляем старые словари для совместимости (они не используются в новых функциях)
 SUITS_NAMES = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A"}
 
@@ -82,11 +81,10 @@ def get_game_data(game_id):
     return None
 
 # ====================================================================
-# НОВЫЕ ФУНКЦИИ ПАРСИНГА (взяты из нового кода)
+# НОВЫЕ ФУНКЦИИ ПАРСИНГА
 # ====================================================================
 
 def get_cards(value_str):
-    """Преобразует JSON-строку карт в список строк (например, ['A♠', '10♦'])"""
     if not value_str or value_str == "[]":
         return []
     try:
@@ -112,7 +110,6 @@ def get_cards(value_str):
         return []
 
 def format_cards(cards):
-    """Форматирует список строк карт в одну строку (без разделителей)"""
     if not cards:
         return ""
     return ''.join(cards)
@@ -142,7 +139,6 @@ def calculate_score(cards):
             aces += 1
             score += 11
     
-    # Корректировка: если перебор, уменьшаем тузы с 11 до 1
     while score > 21 and aces > 0:
         score -= 10
         aces -= 1
@@ -162,7 +158,6 @@ def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
         return True
 
     if state == "4":  # дилер доигрывает
-        # ✅ ЕСЛИ У ИГРОКА 21 - ЗАВЕРШАЕМ!
         if p_score == 21:
             return True
         if dealer_cards and d_score in (20, 21):
@@ -199,7 +194,6 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
         if len(player_cards) == 2 and len(dealer_cards) == 2:
             tags.append("#R")
         
-        # ✅ #G - только если ровно 2 карты и оба туза (мягкий 21)
         player_aces = sum(1 for c in player_cards if c and c[0] == 'A')
         dealer_aces = sum(1 for c in dealer_cards if c and c[0] == 'A')
         if (len(player_cards) == 2 and player_aces == 2) or (len(dealer_cards) == 2 and dealer_aces == 2):
@@ -245,9 +239,6 @@ def edit_message(message_id, text):
         print(f"❌ Ошибка редактирования: {e}", flush=True)
         return False
 
-# =============================================================
-# ИСПРАВЛЕННАЯ ФУНКЦИЯ monitor_active_games (с использованием get_cards)
-# =============================================================
 def monitor_active_games():
     global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history
     
@@ -277,10 +268,12 @@ def monitor_active_games():
         state = None
         
         for item in sc.get("S", []):
-    if item.get("Key") == "P1":
-        player_cards = get_cards(item.get("Value", "[]"))
-    elif item.get("Key") == "P2":
-        dealer_cards = get_cards(item.get("Value", "[]"))
+            if item.get("Key") == "P1":
+                player_cards = get_cards(item.get("Value", "[]"))
+            elif item.get("Key") == "P2":
+                dealer_cards = get_cards(item.get("Value", "[]"))
+            elif item.get("Key") == "STATE":
+                state = item.get("Value")
         
         if not player_cards:
             continue
@@ -289,11 +282,10 @@ def monitor_active_games():
             game_numbers[game_id] = get_game_number()
         game_number = game_numbers[game_id]
         
-        # ✅ ВЫЧИСЛЯЕМ ОЧКИ
         p_score = calculate_score(player_cards)
         d_score = calculate_score(dealer_cards) if dealer_cards else 0
         
-        p1_str = json.dumps(player_cards)  # теперь это список строк
+        p1_str = json.dumps(player_cards)
         p2_str = json.dumps(dealer_cards)
         
         cards_changed = (game_id not in player_cards_history or player_cards_history[game_id] != p1_str or
