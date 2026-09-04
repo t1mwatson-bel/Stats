@@ -187,7 +187,14 @@ def build_message(game_num, player_cards, dealer_cards, p_score, d_score, state)
     d_hand = format_cards(dealer_cards)
     total = p_score + (d_score if dealer_cards else 0)
     
-    if state in ("4", "5") or (dealer_cards and d_score > 21) or (dealer_cards and d_score >= 20) or len(player_cards) >= 5 or len(dealer_cards) >= 5:
+    # ✅ Проверяем, завершена ли игра по очкам (не только по state)
+    finished_by_score = (
+        p_score > 21 or d_score > 21 or
+        p_score == 21 or d_score == 21 or
+        len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5)
+    )
+    
+    if state in ("4", "5") or finished_by_score or (dealer_cards and d_score >= 20):
         tags = []
         if len(player_cards) == 2 and len(dealer_cards) == 2:
             tags.append("#R")
