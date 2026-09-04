@@ -161,17 +161,19 @@ def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
             return True
         return False
 
+    # ✅ ДИЛЕР ДОБИРАЕТ
     if state in ("2", "3"):
-    # Дилер добирает, пока не наберёт 17+ или не переберёт
-    if dealer_cards and d_score < 17:
+        if dealer_cards and d_score < 17:
+            return False
+        if dealer_cards and d_score >= 17:
+            return True
         return False
-    if dealer_cards and d_score >= 17:
-        return True
-    return False
 
+    # ✅ ПРОВЕРКА ПО ПЕРЕБОРУ
     if dealer_cards and d_score > 21:
         return True
 
+    # ✅ 5 КАРТ — ПЕРЕБОР
     if len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5):
         return True
 
