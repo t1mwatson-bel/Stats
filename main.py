@@ -165,9 +165,9 @@ def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
     if state in ("2", "3"):
         if dealer_cards and d_score < 17:
             return False
-        if dealer_cards and d_score >= 17:
-            return True
-        return False
+        if dealer_cards and d_score <= 21:
+        return False  # НЕ ЗАВЕРШАЕМ!
+    return True
 
     # ✅ ПРОВЕРКА ПО ПЕРЕБОРУ
     if dealer_cards and d_score > 21:
