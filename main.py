@@ -161,9 +161,8 @@ def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
             return True
         return False
 
-    # ✅ ДИЛЕР ДОБИРАЕТ
-        if state in ("2", "3"):
-        # В кибер-версии дилер добивает ДО ПОБЕДЫ ИЛИ ПЕРЕБОРА
+    # ✅ КИБЕР-ВЕРСИЯ: дилер добивает ДО ПОБЕДЫ ИЛИ ПЕРЕБОРА
+    if state in ("2", "3"):
         if dealer_cards and d_score <= 21:
             return False
         return True
