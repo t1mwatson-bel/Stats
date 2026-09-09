@@ -35,7 +35,6 @@ game_numbers = {}
 player_cards_history = {}  
 dealer_cards_history = {}  
 game_state_history = {}  
-game_detected_time = {}  # Время первого обнаружения игры
 
 SUITS_NAMES = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A"}
@@ -86,7 +85,7 @@ def get_game_data(game_id):
     return None
 
 # ====================================================================
-# ФУНКЦИИ ПАРСИНГА КАРТ
+# ФУНКЦИИ ПАРСИНГА КАРТ С ЦВЕТНЫМИ ЭМОДЗИ
 # ====================================================================
 
 def get_cards(value_str):
@@ -117,7 +116,15 @@ def get_cards(value_str):
 def format_cards(cards):
     if not cards:
         return ""
-    return ''.join(cards)
+    result = []
+    for card in cards:
+        rank = '10' if card.startswith('10') else card[:-1]
+        suit = card[-1]
+        if suit == '♥' or suit == '♦':
+            result.append(f"{rank}{suit}")
+        else:
+            result.append(f"{rank}{suit}")
+    return ''.join(result)
 
 def calculate_score(cards):
     if not cards:
@@ -136,9 +143,9 @@ def calculate_score(cards):
         elif card.startswith('7'): score += 7
         elif card.startswith('8'): score += 8
         elif card.startswith('9'): score += 9
-        elif card.startswith('J'): score += 10
-        elif card.startswith('Q'): score += 10
-        elif card.startswith('K'): score += 10
+        elif card.startswith('J'): score += 2   # Валет = 2
+        elif card.startswith('Q'): score += 3   # Дама = 3
+        elif card.startswith('K'): score += 4   # Король = 4
         elif card.startswith('A'): score += 11
     return score
 
@@ -212,87 +219,20 @@ def build_message(game_num, game_id, player_cards, dealer_cards, p_score, d_scor
             tags.append("#X")
         
         tag_str = " " + " ".join(tags) if tags else ""
-        
-        # ===== ОСНОВНОЕ СООБЩЕНИЕ =====
         if p_score > 21:
-            main_msg = f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
-        elif d_score > 21:
-            main_msg = f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
-        elif p_score == 21:
-            main_msg = f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
-        elif d_score == 21:
-            main_msg = f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
-        elif p_score > d_score:
-            main_msg = f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
-        elif d_score > p_score:
-            main_msg = f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
-        else:
-            main_msg = f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
-        
-        # ===== ДОПОЛНИТЕЛЬНЫЕ ХЭШТЕГИ ДЛЯ АНАЛИТИКИ =====
-        extra_tags = []
-        
-        # 1. Очки игрока и дилера
-        extra_tags.append(f"#И{p_score}")
-        extra_tags.append(f"#Д{d_score}")
-        extra_tags.append(f"#N{game_num}_T{total}")
-        
-        # 2. Количество карт у игрока
-        extra_tags.append(f"#N{game_num}П{len(player_cards)}")
-        
-        # 3. Каждая карта игрока (ранг + масть)
-        suit_map_full = {'♠': 'П', '♣': 'Т', '♦': 'Б', '♥': 'Ч'}
-        rank_map_short = {'A': 'A', '10': '10', 'J': 'J', 'Q': 'Q', 'K': 'K', '6': '6', '7': '7', '8': '8', '9': '9'}
-        
-        for card in player_cards:
-            if card:
-                rank = card[:-1] if len(card) > 1 else card
-                suit = card[-1] if len(card) > 1 else ''
-                suit_short = suit_map_full.get(suit, suit)
-                rank_short = rank_map_short.get(rank, rank)
-                extra_tags.append(f"#N{game_num}И{rank_short}{suit_short}")
-        
-        # 4. Каждая карта дилера (ранг + масть)
-        for card in dealer_cards:
-            if card:
-                rank = card[:-1] if len(card) > 1 else card
-                suit = card[-1] if len(card) > 1 else ''
-                suit_short = suit_map_full.get(suit, suit)
-                rank_short = rank_map_short.get(rank, rank)
-                extra_tags.append(f"#N{game_num}Д{rank_short}{suit_short}")
-        
-        # 5. Поисковые теги по рангам (игрок)
-        player_ranks = set()
-        for card in player_cards:
-            if card:
-                rank = card[:-1] if len(card) > 1 else card
-                rank_short = rank_map_short.get(rank, rank)
-                player_ranks.add(rank_short)
-        for rank in player_ranks:
-            extra_tags.append(f"#N{game_num}И{rank}")
-        
-        # 6. Поисковые теги по рангам (дилер)
-        dealer_ranks = set()
-        for card in dealer_cards:
-            if card:
-                rank = card[:-1] if len(card) > 1 else card
-                rank_short = rank_map_short.get(rank, rank)
-                dealer_ranks.add(rank_short)
-        for rank in dealer_ranks:
-            extra_tags.append(f"#N{game_num}Д{rank}")
-        
-        # 7. Время начала игры
-        if game_id in game_detected_time:
-            start_time = game_detected_time[game_id]
-            hour = start_time.strftime("%H")
-            minute = start_time.strftime("%M")
-            extra_tags.append(f"#T{hour}_{minute}")
-            extra_tags.append(f"#M{minute}")
-        
-        # Собираем всё в одно сообщение
-        return main_msg + "\n" + " ".join(extra_tags)
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
+        if d_score > 21:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
+        if p_score == 21:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
+        if d_score == 21:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
+        if p_score > d_score:
+            return f"#N{game_num}. ✅{p_score}({p_hand}) - {d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
+        if d_score > p_score:
+            return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
+        return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
     
-    # ===== ПРОМЕЖУТОЧНОЕ СООБЩЕНИЕ (без аналитики) =====
     arrow = get_arrow(state)
     return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total} (ID: {game_id})"
 
@@ -314,7 +254,7 @@ def edit_message(message_id, text):
         return False
 
 def monitor_active_games():
-    global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history, game_detected_time
+    global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history
     
     active_games = get_active_games()
     if not active_games:
@@ -348,10 +288,6 @@ def monitor_active_games():
         else:
             game_num = get_game_number_fallback()
         # =====================================================
-        
-        # Запоминаем время первого обнаружения игры
-        if game_id not in game_detected_time:
-            game_detected_time[game_id] = datetime.now(MOSCOW_TZ)
         
         player_cards = []
         dealer_cards = []
@@ -425,25 +361,25 @@ def monitor_active_games():
         
         if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
             processed_games.add(game_id)
-            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history, game_detected_time):
+            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
                     del d[game_id]
             print(f"🏁 Игра {game_id} завершена (state={state}, p_score={p_score}, d_score={d_score})", flush=True)
         elif len(player_cards) == 2 and p_score == 21:
             processed_games.add(game_id)
-            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history, game_detected_time):
+            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
                     del d[game_id]
             print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! p_score=21, state={state})", flush=True)
         elif dealer_cards and len(dealer_cards) == 2 and d_score == 21:
             processed_games.add(game_id)
-            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history, game_detected_time):
+            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
                     del d[game_id]
             print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! d_score=21, state={state})", flush=True)
 
 def main():
-    global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history, game_detected_time
+    global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history
     print("🔄 ПАРСЕР ОБЫЧНОЙ 21 ЗАПУЩЕН (ЛАЙВ-МОНИТОРИНГ)", flush=True)
     print("⏱️ Мониторинг: каждые 10 секунд", flush=True)
     print("=" * 60, flush=True)
@@ -460,7 +396,6 @@ def main():
                 player_cards_history.clear()
                 dealer_cards_history.clear()
                 game_state_history.clear()
-                game_detected_time.clear()
                 messages.clear()
                 print("🗑️ Кэш очищен", flush=True)
             time.sleep(1)
