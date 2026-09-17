@@ -145,7 +145,6 @@ def calculate_score(cards):
     if not cards:
         return 0
     
-    # Два туза = 21 (блэкджек)
     if len(cards) == 2 and all(c and c[0] == 'A' for c in cards):
         return 21
     
@@ -165,40 +164,6 @@ def calculate_score(cards):
     return score
 
 # ====================================================================
-
-def is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-    # ✅ ПРОВЕРКА BLACKJACK
-    if len(player_cards) == 2 and p_score == 21:
-        return True
-    if dealer_cards and len(dealer_cards) == 2 and d_score == 21:
-        return True
-
-    # ✅ ПРОВЕРКА ПО STATE
-    if state == "5":
-        return True
-
-    if state == "4":
-        if p_score == 21:
-            return True
-        if dealer_cards and d_score in (20, 21):
-            return True
-        return False
-
-    # ✅ КИБЕР-ВЕРСИЯ: дилер добивает ДО ПОБЕДЫ ИЛИ ПЕРЕБОРА
-    if state in ("2", "3"):
-        if dealer_cards and d_score <= 21:
-            return False
-        return True
-
-    # ✅ ПРОВЕРКА ПО ПЕРЕБОРУ
-    if dealer_cards and d_score > 21:
-        return True
-
-    # ✅ 5 КАРТ — ПЕРЕБОР
-    if len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5):
-        return True
-
-    return False
 
 def get_arrow(state):
     if state == "1":
@@ -292,7 +257,6 @@ def monitor_active_games():
         if not sc:
             continue
         
-        # ===== ИЗВЛЕЧЕНИЕ НОМЕРА ИГРЫ ИЗ API (DI или TN) =====
         raw_game_num = value.get("DI") or value.get("TN")
         if raw_game_num:
             match = re.search(r'\d+', str(raw_game_num))
@@ -302,7 +266,6 @@ def monitor_active_games():
                 game_num = get_game_number_fallback()
         else:
             game_num = get_game_number_fallback()
-        # =====================================================
         
         player_cards = []
         dealer_cards = []
@@ -316,7 +279,6 @@ def monitor_active_games():
             elif item.get("Key") == "STATE":
                 state = item.get("Value")
         
-        # Если нет карт игрока и state=0 — отправляем "ожидание"
         if not player_cards and state == "0":
             if game_id not in game_numbers:
                 game_numbers[game_id] = game_num
@@ -374,31 +336,15 @@ def monitor_active_games():
                 messages[game_id] = msg_id
                 print(f"📤 Новая игра {game_id}: {msg}", flush=True)
         
-        if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
-            # ✅ СОХРАНЯЕМ ИГРУ В ФАЙЛ
+        # ✅ ЕСЛИ В СООБЩЕНИИ ЕСТЬ ✅ ИЛИ 🔰 — ИГРА ФИНАЛЬНАЯ
+        if "✅" in msg or "🔰" in msg:
             save_finished_game(msg)
             
             processed_games.add(game_id)
             for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
                     del d[game_id]
-            print(f"🏁 Игра {game_id} завершена (state={state}, p_score={p_score}, d_score={d_score})", flush=True)
-        elif len(player_cards) == 2 and p_score == 21:
-            save_finished_game(msg)
-            
-            processed_games.add(game_id)
-            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
-                if game_id in d:
-                    del d[game_id]
-            print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! p_score=21, state={state})", flush=True)
-        elif dealer_cards and len(dealer_cards) == 2 and d_score == 21:
-            save_finished_game(msg)
-            
-            processed_games.add(game_id)
-            for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
-                if game_id in d:
-                    del d[game_id]
-            print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! d_score=21, state={state})", flush=True)
+            print(f"🏁 Игра {game_id} завершена и сохранена", flush=True)
 
 def main():
     global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history
