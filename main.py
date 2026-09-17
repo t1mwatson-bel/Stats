@@ -49,44 +49,17 @@ HEADERS = {
 print("✅ Настройки для обычной 21 загружены", flush=True)
 
 # =====================================================================
-# СОХРАНЕНИЕ ЗАВЕРШЁННЫХ ИГР
+# СОХРАНЕНИЕ ИГР (одна строка = одна игра)
 # =====================================================================
-LOG_FILE = 'classic21_games.json'
+LOG_FILE = 'twentyone_games.txt'
 
-def save_finished_game(game_num, game_id, player_cards, dealer_cards, p_score, d_score, state):
-    """Сохраняет завершённую игру в файл classic21_games.json"""
+def save_finished_game(msg_text):
     try:
-        record = {
-            "game_num": game_num,
-            "game_id": game_id,
-            "timestamp": datetime.now(MOSCOW_TZ).strftime("%Y-%m-%d %H:%M:%S"),
-            "state": state,
-            "player_cards": player_cards,
-            "dealer_cards": dealer_cards,
-            "p_score": p_score,
-            "d_score": d_score
-        }
-        
-        # Загружаем существующий файл
-        if os.path.exists(LOG_FILE):
-            try:
-                with open(LOG_FILE, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            except:
-                data = []
-        else:
-            data = []
-        
-        # Добавляем запись
-        data.append(record)
-        
-        # Сохраняем
-        with open(LOG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        
-        print(f"💾 Игра №{game_num} сохранена в {LOG_FILE} (всего: {len(data)})", flush=True)
+        with open(LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(msg_text + '\n')
+        print(f"💾 Сохранено: {msg_text}", flush=True)
     except Exception as e:
-        print(f"❌ Ошибка сохранения игры: {e}", flush=True)
+        print(f"❌ Ошибка сохранения: {e}", flush=True)
 
 # =====================================================================
 
@@ -403,7 +376,7 @@ def monitor_active_games():
         
         if is_game_finished(state, player_cards, dealer_cards, p_score, d_score):
             # ✅ СОХРАНЯЕМ ИГРУ В ФАЙЛ
-            save_finished_game(game_number, game_id, player_cards, dealer_cards, p_score, d_score, state)
+            save_finished_game(msg)
             
             processed_games.add(game_id)
             for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
@@ -411,7 +384,7 @@ def monitor_active_games():
                     del d[game_id]
             print(f"🏁 Игра {game_id} завершена (state={state}, p_score={p_score}, d_score={d_score})", flush=True)
         elif len(player_cards) == 2 and p_score == 21:
-            save_finished_game(game_number, game_id, player_cards, dealer_cards, p_score, d_score, state)
+            save_finished_game(msg)
             
             processed_games.add(game_id)
             for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
@@ -419,7 +392,7 @@ def monitor_active_games():
                     del d[game_id]
             print(f"🏁 Игра {game_id} принудительно завершена (BLACKJACK! p_score=21, state={state})", flush=True)
         elif dealer_cards and len(dealer_cards) == 2 and d_score == 21:
-            save_finished_game(game_number, game_id, player_cards, dealer_cards, p_score, d_score, state)
+            save_finished_game(msg)
             
             processed_games.add(game_id)
             for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
