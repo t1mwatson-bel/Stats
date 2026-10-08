@@ -170,7 +170,7 @@ def build_message(game_num, game_id, player_cards, dealer_cards, p_score, d_scor
         len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5)
     )
 
-    if state in ("4", "5") or finished_by_score or (dealer_cards and d_score >= 20):
+    if state in ("4", "5") or finished_by_score:
         tags = []
         if len(player_cards) == 2 and len(dealer_cards) == 2:
             tags.append("#R")
