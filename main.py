@@ -31,10 +31,10 @@ BASE_URL = "https://1xlite-8150.pro"
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 messages = {}
 processed_games = set()
-game_numbers = {}  
-player_cards_history = {}  
-dealer_cards_history = {}  
-game_state_history = {}  
+game_numbers = {}
+player_cards_history = {}
+dealer_cards_history = {}
+game_state_history = {}
 
 SUITS_NAMES = {0: "♠️", 1: "♣️", 2: "♦️", 3: "♥️"}
 RANKS = {2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A"}
@@ -47,19 +47,6 @@ HEADERS = {
 }
 
 print("✅ Настройки для обычной 21 загружены", flush=True)
-
-# =====================================================================
-# СОХРАНЕНИЕ ИГР (одна строка = одна игра)
-# =====================================================================
-LOG_FILE = 'twentyone_games.txt'
-
-def save_finished_game(msg_text):
-    try:
-        with open(LOG_FILE, 'a', encoding='utf-8') as f:
-            f.write(msg_text + '\n')
-        print(f"💾 Сохранено: {msg_text}", flush=True)
-    except Exception as e:
-        print(f"❌ Ошибка сохранения: {e}", flush=True)
 
 # =====================================================================
 
@@ -109,7 +96,8 @@ def get_cards(value_str):
     try:
         cards = json.loads(value_str)
         result = []
-        suit_map = {0: '♠', 1: '♣', 2: '♦', 3: '♥'}
+        # ♠️ ♣️ — чёрные, ♦️ ♥️ — красные (с variation selector для эмодзи)
+        suit_map = {0: '♠️', 1: '♣️', 2: '♦️', 3: '♥️'}
         rank_map = {'1': 'A', '6': '6', '7': '7', '8': '8', '9': '9', '10': '10', '11': 'J', '12': 'Q', '13': 'K', '14': 'A'}
         for card in cards:
             cs = card.get('CS', '?')
@@ -134,20 +122,18 @@ def format_cards(cards):
     result = []
     for card in cards:
         rank = '10' if card.startswith('10') else card[:-1]
+        # Берём последний символ-масть. Если карта уже с VS16 — обрезаем корректно
         suit = card[-1]
-        if suit == '♥' or suit == '♦':
-            result.append(f"{rank}{suit}")
-        else:
-            result.append(f"{rank}{suit}")
+        result.append(f"{rank}{suit}\ufe0f")
     return ''.join(result)
 
 def calculate_score(cards):
     if not cards:
         return 0
-    
+
     if len(cards) == 2 and all(c and c[0] == 'A' for c in cards):
         return 21
-    
+
     score = 0
     for card in cards:
         if not card:
@@ -176,28 +162,28 @@ def build_message(game_num, game_id, player_cards, dealer_cards, p_score, d_scor
     p_hand = format_cards(player_cards)
     d_hand = format_cards(dealer_cards)
     total = p_score + (d_score if dealer_cards else 0)
-    
+
     finished_by_score = (
         p_score > 21 or d_score > 21 or
         p_score == 21 or d_score == 21 or
         len(player_cards) >= 5 or (dealer_cards and len(dealer_cards) >= 5)
     )
-    
+
     if state in ("4", "5") or finished_by_score or (dealer_cards and d_score >= 20):
         tags = []
         if len(player_cards) == 2 and len(dealer_cards) == 2:
             tags.append("#R")
-        
+
         player_aces = sum(1 for c in player_cards if c and c[0] == 'A')
         dealer_aces = sum(1 for c in dealer_cards if c and c[0] == 'A')
         if (len(player_cards) == 2 and player_aces == 2) or (len(dealer_cards) == 2 and dealer_aces == 2):
             tags.append("#G")
-        
+
         if p_score == 21 or d_score == 21:
             tags.append("#O")
         if p_score == d_score:
             tags.append("#X")
-        
+
         tag_str = " " + " ".join(tags) if tags else ""
         if p_score > 21:
             return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
@@ -212,7 +198,7 @@ def build_message(game_num, game_id, player_cards, dealer_cards, p_score, d_scor
         if d_score > p_score:
             return f"#N{game_num}. {p_score}({p_hand}) - ✅{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
         return f"#N{game_num}. {p_score}({p_hand}) - 🔰{d_score}({d_hand}) #T{total}{tag_str} (ID: {game_id})"
-    
+
     arrow = get_arrow(state)
     return f"#N{game_num}. {p_score}({p_hand}) {arrow} {d_score}({d_hand}) #T{total} (ID: {game_id})"
 
@@ -235,28 +221,28 @@ def edit_message(message_id, text):
 
 def monitor_active_games():
     global processed_games, messages, player_cards_history, dealer_cards_history, game_numbers, game_state_history
-    
+
     active_games = get_active_games()
     if not active_games:
         return
-    
+
     for game in active_games:
         game_id = str(game.get("id"))
         if game_id in processed_games:
             continue
-        
+
         data = get_game_data(game_id)
         if not data:
             continue
-        
+
         value = data.get("Value")
         if value is None:
             continue
-            
+
         sc = value.get("SC", {})
         if not sc:
             continue
-        
+
         raw_game_num = value.get("DI") or value.get("TN")
         if raw_game_num:
             match = re.search(r'\d+', str(raw_game_num))
@@ -266,11 +252,11 @@ def monitor_active_games():
                 game_num = get_game_number_fallback()
         else:
             game_num = get_game_number_fallback()
-        
+
         player_cards = []
         dealer_cards = []
         state = None
-        
+
         for item in sc.get("S", []):
             if item.get("Key") == "P1":
                 player_cards = get_cards(item.get("Value", "[]"))
@@ -278,55 +264,43 @@ def monitor_active_games():
                 dealer_cards = get_cards(item.get("Value", "[]"))
             elif item.get("Key") == "STATE":
                 state = item.get("Value")
-        
-        if not player_cards and state == "0":
-            if game_id not in game_numbers:
-                game_numbers[game_id] = game_num
-            game_number = game_numbers[game_id]
-            
-            if game_id not in messages:
-                msg = f"⏳ Ожидание игры #N{game_number} (ID: {game_id})"
-                msg_id = send_message(msg)
-                if msg_id:
-                    messages[game_id] = msg_id
-                    print(f"📤 Ожидание игры {game_id} (№{game_number})", flush=True)
-            continue
-        
+
+        # ✅ Ожидание игры убрано — ждём сразу карты игрока
         if not player_cards:
             continue
-        
+
         if game_id not in game_numbers:
             game_numbers[game_id] = game_num
         game_number = game_numbers[game_id]
-        
+
         p_score = calculate_score(player_cards)
         d_score = calculate_score(dealer_cards) if dealer_cards else 0
-        
+
         p1_str = json.dumps(player_cards)
         p2_str = json.dumps(dealer_cards)
-        
+
         cards_changed = (game_id not in player_cards_history or player_cards_history[game_id] != p1_str or
                          game_id not in dealer_cards_history or dealer_cards_history[game_id] != p2_str)
         state_changed = (game_id not in game_state_history or game_state_history[game_id] != state)
-        
+
         force_update = False
         if len(player_cards) == 2 and p_score == 21:
             force_update = True
         if dealer_cards and len(dealer_cards) == 2 and d_score == 21:
             force_update = True
-        
+
         if not cards_changed and not state_changed and not force_update:
             continue
-        
+
         if force_update and not cards_changed:
             player_cards_history[game_id] = p1_str + "_FORCED"
-        
+
         player_cards_history[game_id] = p1_str
         dealer_cards_history[game_id] = p2_str
         game_state_history[game_id] = state
-        
+
         msg = build_message(game_number, game_id, player_cards, dealer_cards, p_score, d_score, state)
-        
+
         if game_id in messages:
             edit_message(messages[game_id], msg)
             print(f"🔄 Обновлена игра {game_id}: {msg}", flush=True)
@@ -335,23 +309,22 @@ def monitor_active_games():
             if msg_id:
                 messages[game_id] = msg_id
                 print(f"📤 Новая игра {game_id}: {msg}", flush=True)
-        
+
         # ✅ ЕСЛИ В СООБЩЕНИИ ЕСТЬ ✅ ИЛИ 🔰 — ИГРА ФИНАЛЬНАЯ
         if "✅" in msg or "🔰" in msg:
-            save_finished_game(msg)
-            
+            # запись в файл убрана
             processed_games.add(game_id)
             for d in (messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history):
                 if game_id in d:
                     del d[game_id]
-            print(f"🏁 Игра {game_id} завершена и сохранена", flush=True)
+            print(f"🏁 Игра {game_id} завершена", flush=True)
 
 def main():
     global processed_games, messages, game_numbers, player_cards_history, dealer_cards_history, game_state_history
     print("🔄 ПАРСЕР ОБЫЧНОЙ 21 ЗАПУЩЕН (ЛАЙВ-МОНИТОРИНГ)", flush=True)
     print("⏱️ Мониторинг: каждые 10 секунд", flush=True)
     print("=" * 60, flush=True)
-    
+
     last_monitor_time = time.time()
     while True:
         try:
