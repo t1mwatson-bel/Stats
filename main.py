@@ -96,8 +96,8 @@ def get_cards(value_str):
     try:
         cards = json.loads(value_str)
         result = []
-        # ♠️ ♣️ — чёрные, ♦️ ♥️ — красные (с variation selector для эмодзи)
-        suit_map = {0: '♠️', 1: '♣️', 2: '♦️', 3: '♥️'}
+        # Только чистые символы мастей, БЕЗ VS16 — VS16 добавим один раз в format_cards
+        suit_map = {0: '♠', 1: '♣', 2: '♦', 3: '♥'}
         rank_map = {'1': 'A', '6': '6', '7': '7', '8': '8', '9': '9', '10': '10', '11': 'J', '12': 'Q', '13': 'K', '14': 'A'}
         for card in cards:
             cs = card.get('CS', '?')
@@ -121,9 +121,10 @@ def format_cards(cards):
         return ""
     result = []
     for card in cards:
-        rank = '10' if card.startswith('10') else card[:-1]
-        # Берём последний символ-масть. Если карта уже с VS16 — обрезаем корректно
+        # Отделяем масть (последний символ), остальное — ранг
+        rank = card[:-1]
         suit = card[-1]
+        # VS16 добавляем ТОЛЬКО к символу масти, не к рангу
         result.append(f"{rank}{suit}\ufe0f")
     return ''.join(result)
 
